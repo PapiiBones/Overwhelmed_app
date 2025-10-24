@@ -23,7 +23,8 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
   
   useEffect(() => {
     if (isOpen) {
-      inputRef.current?.focus();
+      // Delay focus slightly to allow for transition
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
@@ -44,7 +45,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
       <button
         onClick={onToggle}
         className="fixed bottom-6 right-6 bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-4 rounded-full shadow-lg hover:from-indigo-400 hover:to-purple-500 transition-transform hover:scale-110 z-50"
-        aria-label="Toggle chat"
+        aria-label={isOpen ? "Close AI assistant" : "Open AI assistant"}
       >
         {isOpen ? <CloseIcon className="w-8 h-8" /> : <ChatBubbleIcon className="w-8 h-8" />}
       </button>

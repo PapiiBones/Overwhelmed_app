@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project } from '../types';
-import { InboxIcon, DateRangeIcon, FolderIcon, PlusIcon, CalendarIcon, TrashIcon } from './Icons';
+import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon } from './Icons';
 
 type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
 
@@ -12,24 +12,31 @@ interface SidebarProps {
   onDeleteProject: (id: string) => void;
 }
 
-const NavItem: React.FC<{
-  // Fix: Make icon prop optional as it's not used when a color is provided.
+interface NavItemProps {
   icon?: React.ReactNode;
   label: string;
   isActive: boolean;
   onClick: () => void;
   onDelete?: () => void;
   color?: string;
-}> = ({ icon, label, isActive, onClick, onDelete, color }) => (
-    <div className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`} onClick={onClick}>
+}
+
+const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDelete, color }) => (
+    <div
+        className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+            isActive ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+        }`}
+        onClick={onClick}
+    >
         <div className="flex items-center gap-3">
-            {color ? <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: color}}></div> : icon}
+            {color ? <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: color}} /> : icon}
             <span className="font-medium">{label}</span>
         </div>
         {onDelete && (
             <button
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
                 className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-slate-600"
+                aria-label={`Delete project ${label}`}
             >
                 <TrashIcon className="w-4 h-4" />
             </button>
@@ -51,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
   };
 
   return (
-    <aside className="w-72 bg-slate-900/70 backdrop-blur-md p-4 flex flex-col border-r border-slate-800 h-full">
+    <aside className="hidden md:flex w-72 bg-slate-900/70 backdrop-blur-md p-4 flex-col border-r border-slate-800 h-full">
         <div className="flex items-center gap-2 mb-8 px-2">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12.6667 4H8C5.79086 4 4 5.79086 4 8V12.6667" stroke="url(#paint0_linear_1_2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -117,7 +124,7 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
                     onChange={(e) => setNewProjectName(e.target.value)}
                     placeholder="New project name..."
                     autoFocus
-                    onBlur={() => setIsAddingProject(false)}
+                    onBlur={() => { if(!newProjectName) setIsAddingProject(false); }}
                     className="w-full bg-slate-700/50 text-slate-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
             </form>

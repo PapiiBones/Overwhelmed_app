@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
-import { Task, Importance, ChatMessage, Project } from '../types';
+import { Task, Importance, ChatMessage, Project, AnalysisReport } from '../types';
 
 if (!process.env.API_KEY) {
-    throw new Error("API_KEY is not set");
+    throw new Error("API_KEY is not set in environment variables.");
 }
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -18,8 +18,7 @@ const safeParseJson = <T>(rawText: string): T => {
         return JSON.parse(cleanedText) as T;
     } catch (error) {
         console.error("Failed to parse JSON from Gemini:", cleanedText);
-        // Return a default object or handle the error as needed
-        return {} as T;
+        throw new Error("Invalid JSON response from AI.");
     }
 };
 
@@ -30,15 +29,8 @@ const getSmartTaskSchema = {
       type: Type.STRING,
       description: "The main content or description of the task. This should be the user's input, used verbatim, without any corrections or modifications.",
     },
-    contact: {
-      type: Type.STRING,
-      description: 'Any person or contact associated with the task.',
-    },
-    importance: {
-      type: Type.STRING,
-      enum: Object.values(Importance),
-      description: 'The importance level of the task.',
-    },
+    contact: { type: Type.STRING, description: 'Any person or contact associated with the task.' },
+    importance: { type: Type.STRING, enum: Object.values(Importance), description: 'The importance level of the task.' },
     dueDate: {
         type: Type.STRING,
         description: "The due date and time for the task in ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ). Extract this from phrases like 'tomorrow at 5pm', 'next Friday', etc. Use the current date for context if needed.",
@@ -58,6 +50,20 @@ const getSmartUpdateSchema = {
     },
 };
 
+const analyzeTasksSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: { type: Type.STRING, description: "A brief, encouraging, and actionable summary of the user's tasks." },
+        priorities: {
+            type: Type.ARRAY,
+            description: "A list of the top 3 priority task descriptions based on importance and due dates.",
+            items: { type: Type.STRING }
+        }
+    },
+    required: ['summary', 'priorities'],
+};
+
+
 const getSmartTask = async (prompt: string): Promise<Partial<Task>> => {
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -69,10 +75,8 @@ const getSmartTask = async (prompt: string): Promise<Partial<Task>> => {
     });
     
     const result = safeParseJson<Partial<Task>>(response.text);
-    // Ensure the original content is preserved if the model modifies it
-    if (!result.content || result.content.trim() === '') {
-        result.content = prompt;
-    }
+    // Always use the user's original input for the task content to ensure it's not accidentally modified by the AI.
+    result.content = prompt;
     return result;
 };
 
@@ -91,23 +95,30 @@ const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Proj
 };
 
 
-const analyzeTasks = async (tasks: Task[]): Promise<string> => {
+const analyzeTasks = async (tasks: Task[]): Promise<AnalysisReport> => {
     const activeTasks = tasks.filter(task => !task.completed);
     
     if (activeTasks.length === 0) {
-        return "<h3>All tasks are complete!</h3><p>You have no active tasks to analyze. Great job staying on top of things!</p>";
+        return {
+            summary: "You have no active tasks. Great job staying on top of things!",
+            priorities: [],
+        };
     }
 
     const taskDescriptions = activeTasks.map(t => `- "${t.content}" (Importance: ${t.importance}${t.dueDate ? `, Due: ${new Date(t.dueDate).toLocaleString()}` : ''})`).join('\n');
     
-    const prompt = `Here is a list of today's tasks:\n${taskDescriptions}\n\nProvide a brief, encouraging, and actionable summary. Identify the top 3 priorities based on importance and upcoming due dates. Format the output as clean HTML using headings (h3), bold text (b), and unordered lists (ul/li). Do not include markdown ticks or the word "html".`;
+    const prompt = `Here is a list of today's tasks:\n${taskDescriptions}\n\nProvide a brief, encouraging, and actionable summary. Identify the top 3 priorities based on importance and upcoming due dates.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-pro',
-        contents: prompt
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: analyzeTasksSchema,
+        },
     });
 
-    return response.text;
+    return safeParseJson<AnalysisReport>(response.text);
 };
 
 const getFocusTask = async (tasks: Task[]): Promise<string | null> => {
@@ -124,7 +135,6 @@ const getFocusTask = async (tasks: Task[]): Promise<string | null> => {
     });
 
     const focusedId = response.text.trim();
-    // Validate that the returned ID is actually one of the active tasks
     return activeTasks.some(t => t.id === focusedId) ? focusedId : activeTasks[0].id;
 };
 
@@ -138,12 +148,7 @@ const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks
         ? `Here are the user's projects:\n${projects.map(p => `- ${p.name} (ID: ${p.id})`).join('\n')}`
         : "The user has not created any projects yet.";
 
-    const systemInstruction = `You are a helpful AI assistant for the "Overwhelmed" planner app. You have access to the user's current tasks and projects. Your role is to answer questions about their tasks, provide encouragement, and help them organize their day. Be concise, friendly, and supportive. Today's date is ${new Date().toDateString()}.
-
-${taskContext}
-
-${projectContext}
-`;
+    const systemInstruction = `You are a helpful AI assistant for the "Overwhelmed" planner app. You have access to the user's current tasks and projects. Your role is to answer questions about their tasks, provide encouragement, and help them organize their day. Be concise, friendly, and supportive. Today's date is ${new Date().toDateString()}.\n\n${taskContext}\n\n${projectContext}`;
     
     const fullHistory: GeminiChatMessage[] = [
       ...history.map(m => ({
@@ -156,9 +161,7 @@ ${projectContext}
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
       contents: fullHistory,
-      config: {
-        systemInstruction: systemInstruction,
-      },
+      config: { systemInstruction },
     });
     
     return response.text;

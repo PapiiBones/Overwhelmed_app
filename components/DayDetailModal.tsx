@@ -1,5 +1,4 @@
 import React from 'react';
-// Fix: Import Project type
 import { Task, Project } from '../types';
 import TaskItem from './TaskItem';
 import { CloseIcon } from './Icons';
@@ -7,17 +6,14 @@ import { CloseIcon } from './Icons';
 interface DayDetailModalProps {
   date: Date;
   tasks: Task[];
-  // Fix: Add projects to props to pass down to TaskItem
   projects: Project[];
   onClose: () => void;
-  onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
   onDeleteTask: (id: string) => void;
-  // Fix: Add onComplete to props to pass down to TaskItem
   onComplete: (id: string, completed: boolean) => void;
+  onSelectTask: (task: Task) => void;
 }
 
-// Fix: Accept projects and onComplete in component props
-const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, onClose, onUpdateTask, onDeleteTask, onComplete }) => {
+const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, onClose, onDeleteTask, onComplete, onSelectTask }) => {
   const formattedDate = date.toLocaleDateString(undefined, {
     weekday: 'long',
     year: 'numeric',
@@ -27,7 +23,11 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
 
   const sortedTasks = [...tasks].sort((a, b) => {
     if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    // Sort by importance, then timestamp as a fallback
+    const importanceOrder = ['Critical', 'High', 'Medium', 'Low'];
+    const importanceDiff = importanceOrder.indexOf(a.importance) - importanceOrder.indexOf(b.importance);
+    if (importanceDiff !== 0) return importanceDiff;
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
   return (
@@ -42,7 +42,7 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-600"></div>
         <header className="flex justify-between items-center p-4 border-b border-slate-700 flex-shrink-0">
           <h2 className="text-xl font-bold text-slate-100">{formattedDate}</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full" aria-label="Close day detail">
             <CloseIcon className="w-6 h-6" />
           </button>
         </header>
@@ -52,12 +52,11 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
               <TaskItem
                 key={task.id}
                 task={task}
-                // Fix: Pass the missing projects and onComplete props to TaskItem
                 projects={projects}
-                onUpdateTask={onUpdateTask}
+                onSelectTask={onSelectTask}
                 onDeleteTask={onDeleteTask}
                 onComplete={onComplete}
-                isFocused={false} // No focus mode inside modal
+                isFocused={false}
               />
             ))
           ) : (

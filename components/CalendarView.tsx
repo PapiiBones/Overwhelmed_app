@@ -1,17 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { Task, Importance, Project } from '../types';
+import { Task, Project } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
 import DayDetailModal from './DayDetailModal';
 
 interface CalendarViewProps {
   tasks: Task[];
   projects: Project[];
-  onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
   onDeleteTask: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
+  onSelectTask: (task: Task) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onUpdateTask, onDeleteTask, onComplete }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onDeleteTask, onComplete, onSelectTask }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
@@ -91,9 +91,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onUpdateTa
           tasks={tasksByDate.get(formatDateKey(selectedDate)) || []} 
           projects={projects}
           onClose={() => setSelectedDate(null)} 
-          onUpdateTask={onUpdateTask} 
           onDeleteTask={onDeleteTask} 
           onComplete={onComplete}
+          onSelectTask={onSelectTask}
         />
       )}
     </>

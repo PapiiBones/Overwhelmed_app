@@ -19,6 +19,7 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ onAddTask, isBusy }) => {
   return (
     <form onSubmit={handleSubmit} className="flex gap-2">
       <div className="relative flex-grow">
+        <label htmlFor="add-task-input" className="sr-only">Add a new task with AI</label>
         <input
           id="add-task-input"
           type="text"

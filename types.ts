@@ -1,4 +1,3 @@
-
 export enum Importance {
   LOW = 'Low',
   MEDIUM = 'Medium',
@@ -13,7 +12,7 @@ export interface Project {
 }
 
 export interface Task {
-  id: string;
+  id:string;
   content: string;
   contact?: string;
   timestamp: string;
@@ -22,6 +21,7 @@ export interface Task {
   completed: boolean;
   projectId?: string;
   isProcessing?: boolean;
+  notes?: string;
 }
 
 export interface ChatMessage {
@@ -32,4 +32,9 @@ export interface ChatMessage {
 export interface UndoState {
   task: Task;
   index: number;
+}
+
+export interface AnalysisReport {
+  summary: string;
+  priorities: string[];
 }

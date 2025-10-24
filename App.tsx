@@ -1,69 +1,64 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Task, Importance, UndoState, Project, ChatMessage } from './types';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Task, Importance, Project, ChatMessage, AnalysisReport } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
 import CalendarView from './components/CalendarView';
 import Toast from './components/Toast';
 import Sidebar from './components/Sidebar';
+import TaskDetailModal from './components/TaskDetailModal';
 import { geminiService } from './services/geminiService';
-import { BrainIcon, StarIcon } from './components/Icons';
+import { BrainIcon, StarIcon, CheckIcon } from './components/Icons';
 import { PROJECT_COLORS } from './constants';
+import { useAppReducer } from './hooks/useAppReducer';
 
 type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
 
+const AIAnalysisResult: React.FC<{ report: AnalysisReport; onClose: () => void; }> = ({ report, onClose }) => (
+    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 relative animate-fade-in mb-6">
+        <button onClick={onClose} id="close-analysis" className="absolute top-2 right-2 p-1 text-slate-400 hover:text-white">&times;</button>
+        <h3 className="font-bold text-lg mb-2 text-purple-400">AI Analysis</h3>
+        <p className="text-slate-300 mb-4">{report.summary}</p>
+        {report.priorities.length > 0 && (
+            <>
+                <h4 className="font-semibold text-slate-200 mb-2">Top Priorities:</h4>
+                <ul className="space-y-2">
+                    {report.priorities.map((item, index) => (
+                        <li key={index} className="flex items-start gap-2 text-slate-300">
+                           <CheckIcon className="w-4 h-4 mt-1 text-indigo-400 flex-shrink-0" />
+                           <span>{item}</span>
+                        </li>
+                    ))}
+                </ul>
+            </>
+        )}
+    </div>
+);
+
 const App: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const { state, dispatch } = useAppReducer();
+  const { tasks, projects, chatHistory, undoState } = state;
+
   const [currentView, setCurrentView] = useState<View>({ type: 'inbox' });
-  const [analysisResult, setAnalysisResult] = useState<string>('');
+  const [analysisResult, setAnalysisResult] = useState<AnalysisReport | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [filterBy, setFilterBy] = useState<Importance | 'all'>('all');
   const [sortBy, setSortBy] = useState<'timestamp' | 'importance' | 'dueDate'>('timestamp');
-  const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   
   const completeSoundRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- Data Persistence ---
   useEffect(() => {
-    try {
-      const storedTasks = localStorage.getItem('ai-planner-tasks-v2');
-      if (storedTasks) setTasks(JSON.parse(storedTasks));
-      const storedProjects = localStorage.getItem('ai-planner-projects-v2');
-      if (storedProjects) setProjects(JSON.parse(storedProjects));
-      const storedHistory = localStorage.getItem('ai-planner-chat-history-v1');
-      if (storedHistory) setChatHistory(JSON.parse(storedHistory));
-      completeSoundRef.current = document.getElementById('complete-sound') as HTMLAudioElement;
-    } catch (error) { console.error("Failed to load data", error); }
+    completeSoundRef.current = document.getElementById('complete-sound') as HTMLAudioElement;
   }, []);
-
-  useEffect(() => {
-    try {
-      const tasksToSave = tasks.filter(t => !t.isProcessing);
-      localStorage.setItem('ai-planner-tasks-v2', JSON.stringify(tasksToSave));
-    } catch (error) { console.error("Failed to save tasks", error); }
-  }, [tasks]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ai-planner-projects-v2', JSON.stringify(projects));
-    } catch (error) { console.error("Failed to save projects", error); }
-  }, [projects]);
   
-  useEffect(() => {
-    try {
-      localStorage.setItem('ai-planner-chat-history-v1', JSON.stringify(chatHistory));
-    } catch (error) { console.error("Failed to save chat history", error); }
-  }, [chatHistory]);
-  
-  // --- Keyboard Shortcuts ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+        const target = e.target as HTMLElement;
+        if (target.matches('input, select, textarea')) return;
         if (e.key === 'n' || e.key === 'N') {
             e.preventDefault();
             document.getElementById('add-task-input')?.focus();
@@ -78,7 +73,7 @@ const App: React.FC = () => {
   }, []);
 
   // --- CRUD Operations ---
-  const addTask = (rawContent: string) => {
+  const addTask = useCallback((rawContent: string) => {
     const provisionalId = crypto.randomUUID();
     const provisionalTask: Task = {
       id: provisionalId,
@@ -87,83 +82,71 @@ const App: React.FC = () => {
       completed: false,
       importance: Importance.MEDIUM,
       isProcessing: true,
+      notes: '',
       projectId: currentView.type === 'project' ? currentView.projectId : undefined,
     };
-    setTasks(prevTasks => [provisionalTask, ...prevTasks]);
+    dispatch({ type: 'ADD_TASK', payload: provisionalTask });
 
     geminiService.getSmartTask(rawContent)
-      .then(smartTask => updateTask(provisionalId, { ...smartTask, isProcessing: false }))
+      .then(smartTask => dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, isProcessing: false } } }))
       .catch(error => {
         console.error("Failed to smart-add task", error);
-        updateTask(provisionalId, { isProcessing: false });
+        dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { isProcessing: false } } });
       });
-  };
+  }, [dispatch, currentView]);
 
-  const updateTask = (id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => {
-    setTasks(prevTasks => prevTasks.map(task => (task.id === id ? { ...task, ...updatedFields } : task)));
-  };
+  const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => {
+    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedFields } });
+  }, [dispatch]);
 
-  const deleteTask = (id: string) => {
-    const taskIndex = tasks.findIndex(t => t.id === id);
-    if (taskIndex === -1) return;
-    
-    const taskToDelete = tasks[taskIndex];
-    setUndoState({ task: taskToDelete, index: taskIndex });
-    setTasks(prevTasks => prevTasks.filter(task => task.id !== id));
-    
-    setTimeout(() => setUndoState(null), 5000);
-  };
+  const deleteTask = useCallback((id: string) => {
+    dispatch({ type: 'DELETE_TASK', payload: id });
+    setTimeout(() => dispatch({ type: 'SET_UNDO_STATE', payload: null }), 5000);
+  }, [dispatch]);
 
-  const handleCompleteTask = (id: string, completed: boolean) => {
+  const handleCompleteTask = useCallback((id: string, completed: boolean) => {
     if (completed && completeSoundRef.current) {
         completeSoundRef.current.currentTime = 0;
         completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
     }
     updateTask(id, { completed });
-  };
+  }, [updateTask]);
   
-  const handleUndoDelete = () => {
-    if (!undoState) return;
-    const newTasks = [...tasks];
-    newTasks.splice(undoState.index, 0, undoState.task);
-    setTasks(newTasks);
-    setUndoState(null);
-  };
+  const handleUndoDelete = useCallback(() => {
+    dispatch({ type: 'RESTORE_UNDO_STATE' });
+  }, [dispatch]);
 
-  const addProject = (name: string) => {
+  const addProject = useCallback((name: string) => {
     const newProject: Project = {
       id: crypto.randomUUID(),
       name,
       color: PROJECT_COLORS[projects.length % PROJECT_COLORS.length],
     };
-    setProjects(prev => [...prev, newProject]);
-  };
+    dispatch({ type: 'ADD_PROJECT', payload: newProject });
+  }, [dispatch, projects.length]);
 
-  const deleteProject = (id: string) => {
-    // Reassign tasks from deleted project to inbox
-    setTasks(prev => prev.map(t => t.projectId === id ? {...t, projectId: undefined} : t));
-    setProjects(prev => prev.filter(p => p.id !== id));
-    // If we were viewing the deleted project, switch to inbox
+  const deleteProject = useCallback((id: string) => {
+    dispatch({ type: 'DELETE_PROJECT', payload: id });
     if (currentView.type === 'project' && currentView.projectId === id) {
         setCurrentView({ type: 'inbox' });
     }
-  };
+  }, [dispatch, currentView]);
 
   // --- AI Actions ---
   const handleSendMessage = async (newMessage: string) => {
     const userMessage: ChatMessage = { role: 'user', parts: [{ text: newMessage }] };
-    const historyForApi = [...chatHistory];
-    setChatHistory(prev => [...prev, userMessage]);
+    const newHistory = [...chatHistory, userMessage];
+    dispatch({ type: 'SET_CHAT_HISTORY', payload: newHistory });
     setIsChatLoading(true);
 
     try {
-        const responseText = await geminiService.getChatResponse(historyForApi, newMessage, tasks, projects);
+        const responseText = await geminiService.getChatResponse(chatHistory, newMessage, tasks, projects);
         const modelMessage: ChatMessage = { role: 'model', parts: [{ text: responseText }] };
-        setChatHistory(prev => [...prev, modelMessage]);
+        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...newHistory, modelMessage] });
     } catch(error) {
         console.error("Chatbot error:", error);
         const errorMessage: ChatMessage = { role: 'model', parts: [{ text: "Sorry, I'm having trouble responding right now." }] };
-        setChatHistory(prev => [...prev, errorMessage]);
+        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...newHistory, errorMessage] });
     } finally {
         setIsChatLoading(false);
     }
@@ -171,12 +154,12 @@ const App: React.FC = () => {
   
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
-    setAnalysisResult('');
+    setAnalysisResult(null);
     try {
         const result = await geminiService.analyzeTasks(tasks);
         setAnalysisResult(result);
     } catch (error) {
-        setAnalysisResult("<p>An error occurred during analysis.</p>");
+        setAnalysisResult({ summary: "An error occurred during analysis.", priorities: [] });
     } finally {
         setIsAnalyzing(false);
     }
@@ -195,35 +178,26 @@ const App: React.FC = () => {
   const displayedTasks = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const endOfToday = new Date();
+    const endOfToday = new Date(today);
     endOfToday.setHours(23, 59, 59, 999);
-    
     const upcomingEndDate = new Date(today);
     upcomingEndDate.setDate(today.getDate() + 7);
 
     let filtered = tasks;
     
     switch (currentView.type) {
-        case 'inbox':
-            filtered = tasks.filter(t => !t.projectId);
-            break;
-        case 'today':
-            filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= endOfToday);
-            break;
-        case 'upcoming':
-            filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= upcomingEndDate);
-            break;
-        case 'project':
-            filtered = tasks.filter(t => t.projectId === currentView.projectId);
-            break;
+        case 'inbox': filtered = tasks.filter(t => !t.projectId); break;
+        case 'today': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= endOfToday); break;
+        case 'upcoming': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) > endOfToday && new Date(t.dueDate) <= upcomingEndDate); break;
+        case 'project': filtered = tasks.filter(t => t.projectId === currentView.projectId); break;
     }
     
     if (currentView.type !== 'calendar' && filterBy !== 'all') {
         filtered = filtered.filter(task => task.importance === filterBy);
     }
 
-    const importanceOrder: Importance[] = [Importance.CRITICAL, Importance.HIGH, Importance.MEDIUM, Importance.LOW];
-    return filtered.sort((a, b) => {
+    const importanceOrder = [Importance.CRITICAL, Importance.HIGH, Importance.MEDIUM, Importance.LOW];
+    return [...filtered].sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
         if (sortBy === 'importance') return importanceOrder.indexOf(a.importance) - importanceOrder.indexOf(b.importance);
         if (sortBy === 'dueDate') {
@@ -235,14 +209,10 @@ const App: React.FC = () => {
     });
   }, [tasks, currentView, filterBy, sortBy]);
 
-  const activeTasksCount = tasks.filter(t => !t.completed).length;
+  const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
+  const isAddingTask = useMemo(() => tasks.some(t => t.isProcessing), [tasks]);
   
-  const viewTitles: {[key: string]: string} = {
-    inbox: 'Inbox',
-    today: 'Today',
-    upcoming: 'Upcoming',
-  }
-  
+  const viewTitles: {[key: string]: string} = { inbox: 'Inbox', today: 'Today', upcoming: 'Upcoming' };
   const currentTitle = currentView.type === 'project'
     ? projects.find(p => p.id === currentView.projectId)?.name || 'Project'
     : viewTitles[currentView.type] || 'Planner';
@@ -271,21 +241,19 @@ const App: React.FC = () => {
                     <StarIcon className="w-5 h-5"/> <span>Start Here</span>
                   </button>
                   <button onClick={handleAnalyze} disabled={isAnalyzing || activeTasksCount === 0} className="hidden sm:flex items-center gap-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
-                      {isAnalyzing && focusTaskId === null ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : <BrainIcon className="w-5 h-5"/>}
+                      {isAnalyzing && !analysisResult ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : <BrainIcon className="w-5 h-5"/>}
                       <span>Analyze</span>
                   </button>
                 </div>
             </header>
             
-            {analysisResult && (
-                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 relative animate-fade-in mb-6" dangerouslySetInnerHTML={{__html: `<button id="close-analysis" class="absolute top-2 right-2 p-1 text-slate-400 hover:text-white">&times;</button><h3 class="font-bold text-lg mb-2 text-purple-400">AI Analysis</h3>` + analysisResult}} onClick={(e) => (e.target as HTMLElement).id === 'close-analysis' && setAnalysisResult('')}></div>
-            )}
+            {analysisResult && <AIAnalysisResult report={analysisResult} onClose={() => setAnalysisResult(null)} />}
             
             <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={false} /></div>}
+                {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} /></div>}
 
                 {currentView.type === 'calendar' ? (
-                    <CalendarView tasks={tasks} projects={projects} onUpdateTask={updateTask} onDeleteTask={deleteTask} onComplete={handleCompleteTask} />
+                    <CalendarView tasks={tasks} projects={projects} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={setSelectedTask} />
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-4 mb-6">
@@ -302,12 +270,11 @@ const App: React.FC = () => {
                             <option value="dueDate">Sort: Due Date</option>
                         </select>
                     </div>
-
                      <div className="space-y-4">
                       {displayedTasks.length > 0 ? (
                         displayedTasks.map(task => (
                           <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
-                              <TaskItem task={task} projects={projects} onUpdateTask={updateTask} onDeleteTask={deleteTask} onComplete={handleCompleteTask} isFocused={focusTaskId === task.id} />
+                              <TaskItem task={task} projects={projects} onSelectTask={setSelectedTask} onDeleteTask={deleteTask} onComplete={handleCompleteTask} isFocused={focusTaskId === task.id} />
                           </div>
                         ))
                       ) : (
@@ -329,6 +296,14 @@ const App: React.FC = () => {
         onSendMessage={handleSendMessage}
         isLoading={isChatLoading}
       />
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          projects={projects}
+          onClose={() => setSelectedTask(null)}
+          onUpdateTask={updateTask}
+        />
+      )}
       <Toast message="Task deleted" isVisible={!!undoState} onAction={handleUndoDelete} actionText="Undo" />
     </div>
   );
