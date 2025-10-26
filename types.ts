@@ -11,6 +11,11 @@ export interface Project {
   color: string;
 }
 
+export interface RecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'monthly';
+  interval: number;
+}
+
 export interface Task {
   id:string;
   content: string;
@@ -23,6 +28,7 @@ export interface Task {
   isProcessing?: boolean;
   notes?: string;
   isPriority?: boolean;
+  recurrenceRule?: RecurrenceRule;
 }
 
 export interface ChatMessage {

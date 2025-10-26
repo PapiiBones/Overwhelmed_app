@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Task, Project, Importance } from '../types';
+import { Task, Project, Importance, RecurrenceRule } from '../types';
 import { geminiService } from '../services/geminiService';
-import { CloseIcon } from './Icons';
+import { CloseIcon, CalendarIcon } from './Icons';
 
 interface TaskDetailModalProps {
   task: Task;
@@ -21,7 +21,7 @@ const SMART_UPDATE_KEYWORDS = [
   'by', 'at', 'on', 'due', 'in', 'for',
   'critical', 'high', 'medium', 'low', 'urgent', 'important',
   'call', 'email', 'meet', 'text', 'remind',
-  'project', 'move to',
+  'project', 'move to', 'every day', 'daily', 'weekly', 'monthly'
 ];
 const smartUpdateRegex = new RegExp(`\\b(${SMART_UPDATE_KEYWORDS.join('|')})\\b`, 'i');
 
@@ -94,14 +94,24 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
   const handleSave = async () => {
     const contentHasChanged = editState.content?.trim() !== task.content.trim() && editState.content?.trim();
     
-    // Helper to diff the new state against the original task
     const getChangedFields = (currentState: Partial<Task>): Partial<Omit<Task, 'id' | 'timestamp'>> => {
       const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
       (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
-        if (key !== 'id' && key !== 'timestamp' && currentState[key] !== task[key]) {
-          (changes as any)[key] = currentState[key];
+        if (key !== 'id' && key !== 'timestamp') {
+          // Deep compare for recurrenceRule
+          if (key === 'recurrenceRule') {
+            if (JSON.stringify(currentState.recurrenceRule) !== JSON.stringify(task.recurrenceRule)) {
+               (changes as any)[key] = currentState[key];
+            }
+          } else if (currentState[key] !== task[key]) {
+            (changes as any)[key] = currentState[key];
+          }
         }
       });
+      // Handle case where recurrenceRule is removed
+      if (task.recurrenceRule && !currentState.recurrenceRule) {
+        changes.recurrenceRule = undefined;
+      }
       return changes;
     };
 
@@ -138,6 +148,40 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
     } catch (e) {
       return '';
     }
+  };
+
+  const handleRecurrenceChange = (frequency: RecurrenceRule['frequency'] | 'never') => {
+    if (frequency === 'never') {
+      const { recurrenceRule, ...rest } = editState;
+      setEditState(rest);
+    } else {
+      setEditState(s => ({ ...s, recurrenceRule: { frequency, interval: 1 } }));
+    }
+  };
+
+  const generateGoogleCalendarLink = () => {
+    const baseUrl = 'https://www.google.com/calendar/render?action=TEMPLATE';
+    const title = encodeURIComponent(task.content);
+    const notes = encodeURIComponent(stripMarkdown(task.notes || ''));
+    
+    if (!task.dueDate) {
+        return `${baseUrl}&text=${title}&details=${notes}`;
+    }
+
+    const startTime = new Date(task.dueDate);
+    const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // Assume 1 hour duration
+
+    const formatGCDate = (date: Date) => date.toISOString().replace(/-|:|\.\d+/g, '');
+    
+    const dates = `&dates=${formatGCDate(startTime)}/${formatGCDate(endTime)}`;
+
+    return `${baseUrl}&text=${title}&dates=${dates}&details=${notes}`;
+  };
+
+  const stripMarkdown = (text: string): string => {
+    let stripped = text.replace(/\[(.*?)\]\(.*?\)/g, '$1'); // Links
+    stripped = stripped.replace(/[*_~`#]/g, ''); // Formatting
+    return stripped;
   };
 
   return (
@@ -238,14 +282,52 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
                         className="w-full bg-slate-700 text-slate-300 p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                 </div>
+                 <div>
+                    <label htmlFor="task-recurrence" className="block text-sm font-medium text-slate-400 mb-1">Repeats</label>
+                    <select
+                        id="task-recurrence"
+                        value={editState.recurrenceRule?.frequency || 'never'}
+                        onChange={(e) => handleRecurrenceChange(e.target.value as any)}
+                        className="w-full bg-slate-700 text-slate-300 p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                        <option value="never">Never</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                 <div className="flex items-center pt-6">
+                    <input
+                        id="task-priority"
+                        type="checkbox"
+                        checked={!!editState.isPriority}
+                        onChange={(e) => setEditState(s => ({ ...s, isPriority: e.target.checked }))}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="task-priority" className="ml-2 block text-sm text-slate-300">
+                        Mark as Priority
+                    </label>
+                </div>
             </div>
           </div>
         </main>
-        <footer className="flex justify-end gap-2 p-4 border-t border-slate-700 flex-shrink-0 bg-slate-800/50">
-            <button onClick={onClose} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-700 rounded-md disabled:opacity-50">Cancel</button>
-            <button onClick={handleSave} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md w-32 flex justify-center items-center disabled:bg-indigo-800 disabled:cursor-not-allowed">
-                {isThinking ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : 'Save Changes'}
-            </button>
+        <footer className="flex justify-between items-center gap-2 p-4 border-t border-slate-700 flex-shrink-0 bg-slate-800/50">
+            <a
+                href={generateGoogleCalendarLink()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-700 rounded-md transition-colors"
+                aria-label="Add to Google Calendar"
+            >
+                <CalendarIcon className="w-4 h-4" />
+                Add to Google Calendar
+            </a>
+            <div className="flex items-center gap-2">
+                <button onClick={onClose} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-700 rounded-md disabled:opacity-50">Cancel</button>
+                <button onClick={handleSave} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md w-32 flex justify-center items-center disabled:bg-indigo-800 disabled:cursor-not-allowed">
+                    {isThinking ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : 'Save Changes'}
+                </button>
+            </div>
         </footer>
       </div>
     </div>

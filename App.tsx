@@ -14,6 +14,7 @@ import { PROJECT_COLORS } from './constants';
 import { useAppReducer } from './hooks/useAppReducer';
 import { useAIActions } from './hooks/useAIActions';
 import { sortTasks } from './utils/sorting';
+import { calculateNextDueDate } from './utils/date';
 
 type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
 
@@ -92,12 +93,27 @@ const App: React.FC = () => {
   }, [dispatch]);
 
   const handleCompleteTask = useCallback((id: string, completed: boolean) => {
+    if (completed) {
+      const task = tasks.find(t => t.id === id);
+      // If it's a recurring task, reschedule it instead of marking complete
+      if (task?.recurrenceRule) {
+        const nextDueDate = calculateNextDueDate(task.dueDate || new Date().toISOString(), task.recurrenceRule);
+        updateTask(id, { dueDate: nextDueDate });
+        if (completeSoundRef.current) {
+          completeSoundRef.current.currentTime = 0;
+          completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
+        }
+        return; // Exit early
+      }
+    }
+
+    // Original logic for non-recurring tasks or marking as incomplete
     if (completed && completeSoundRef.current) {
         completeSoundRef.current.currentTime = 0;
         completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
     }
     updateTask(id, { completed });
-  }, [updateTask]);
+  }, [tasks, updateTask]);
   
   const handleUndoDelete = useCallback(() => {
     dispatch({ type: 'RESTORE_UNDO_STATE' });
