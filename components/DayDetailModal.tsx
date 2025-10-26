@@ -2,6 +2,7 @@ import React from 'react';
 import { Task, Project } from '../types';
 import TaskItem from './TaskItem';
 import { CloseIcon } from './Icons';
+import { sortTasks } from '../utils/sorting';
 
 interface DayDetailModalProps {
   date: Date;
@@ -11,9 +12,10 @@ interface DayDetailModalProps {
   onDeleteTask: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
   onSelectTask: (task: Task) => void;
+  onUpdateTask: (id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
 }
 
-const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, onClose, onDeleteTask, onComplete, onSelectTask }) => {
+const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, onClose, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
   const formattedDate = date.toLocaleDateString(undefined, {
     weekday: 'long',
     year: 'numeric',
@@ -21,14 +23,7 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
     day: 'numeric',
   });
 
-  const sortedTasks = [...tasks].sort((a, b) => {
-    if (a.completed !== b.completed) return a.completed ? 1 : -1;
-    // Sort by importance, then timestamp as a fallback
-    const importanceOrder = ['Critical', 'High', 'Medium', 'Low'];
-    const importanceDiff = importanceOrder.indexOf(a.importance) - importanceOrder.indexOf(b.importance);
-    if (importanceDiff !== 0) return importanceDiff;
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-  });
+  const sortedTasks = sortTasks(tasks, 'importance');
 
   return (
     <div 
@@ -56,6 +51,7 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
                 onSelectTask={onSelectTask}
                 onDeleteTask={onDeleteTask}
                 onComplete={onComplete}
+                onUpdateTask={onUpdateTask}
                 isFocused={false}
               />
             ))

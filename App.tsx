@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Task, Importance, Project, ChatMessage, AnalysisReport } from './types';
+import { Task, Importance, Project, ChatMessage, ModalState, SortBy } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
@@ -7,47 +7,33 @@ import CalendarView from './components/CalendarView';
 import Toast from './components/Toast';
 import Sidebar from './components/Sidebar';
 import TaskDetailModal from './components/TaskDetailModal';
+import AIAnalysisModal from './components/AIAnalysisModal';
 import { geminiService } from './services/geminiService';
-import { BrainIcon, StarIcon, CheckIcon } from './components/Icons';
+import { BrainIcon, StarIcon } from './components/Icons';
 import { PROJECT_COLORS } from './constants';
 import { useAppReducer } from './hooks/useAppReducer';
+import { useAIActions } from './hooks/useAIActions';
+import { sortTasks } from './utils/sorting';
 
 type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
-
-const AIAnalysisResult: React.FC<{ report: AnalysisReport; onClose: () => void; }> = ({ report, onClose }) => (
-    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 relative animate-fade-in mb-6">
-        <button onClick={onClose} id="close-analysis" className="absolute top-2 right-2 p-1 text-slate-400 hover:text-white">&times;</button>
-        <h3 className="font-bold text-lg mb-2 text-purple-400">AI Analysis</h3>
-        <p className="text-slate-300 mb-4">{report.summary}</p>
-        {report.priorities.length > 0 && (
-            <>
-                <h4 className="font-semibold text-slate-200 mb-2">Top Priorities:</h4>
-                <ul className="space-y-2">
-                    {report.priorities.map((item, index) => (
-                        <li key={index} className="flex items-start gap-2 text-slate-300">
-                           <CheckIcon className="w-4 h-4 mt-1 text-indigo-400 flex-shrink-0" />
-                           <span>{item}</span>
-                        </li>
-                    ))}
-                </ul>
-            </>
-        )}
-    </div>
-);
 
 const App: React.FC = () => {
   const { state, dispatch } = useAppReducer();
   const { tasks, projects, chatHistory, undoState } = state;
 
   const [currentView, setCurrentView] = useState<View>({ type: 'inbox' });
-  const [analysisResult, setAnalysisResult] = useState<AnalysisReport | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [filterBy, setFilterBy] = useState<Importance | 'all'>('all');
-  const [sortBy, setSortBy] = useState<'timestamp' | 'importance' | 'dueDate'>('timestamp');
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>('timestamp');
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [modal, setModal] = useState<ModalState>({ type: 'none' });
+
+  const {
+    isAnalyzing,
+    focusTaskId,
+    analyzeTasks,
+    findFocusTask,
+    clearFocusTask,
+  } = useAIActions(tasks);
   
   const completeSoundRef = useRef<HTMLAudioElement | null>(null);
 
@@ -65,7 +51,7 @@ const App: React.FC = () => {
         }
         if (e.key === 'c' || e.key === 'C') {
             e.preventDefault();
-            setIsChatOpen(prev => !prev);
+            setModal(prev => prev.type === 'chatbot' ? { type: 'none' } : { type: 'chatbot' });
         }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -83,6 +69,7 @@ const App: React.FC = () => {
       importance: Importance.MEDIUM,
       isProcessing: true,
       notes: '',
+      isPriority: false,
       projectId: currentView.type === 'project' ? currentView.projectId : undefined,
     };
     dispatch({ type: 'ADD_TASK', payload: provisionalTask });
@@ -153,27 +140,11 @@ const App: React.FC = () => {
   };
   
   const handleAnalyze = async () => {
-    setIsAnalyzing(true);
-    setAnalysisResult(null);
-    try {
-        const result = await geminiService.analyzeTasks(tasks);
-        setAnalysisResult(result);
-    } catch (error) {
-        setAnalysisResult({ summary: "An error occurred during analysis.", priorities: [] });
-    } finally {
-        setIsAnalyzing(false);
-    }
+    setModal({ type: 'ai-analysis', report: null });
+    const report = await analyzeTasks();
+    setModal({ type: 'ai-analysis', report });
   };
   
-  const handleFocus = async () => {
-      setIsAnalyzing(true);
-      try {
-        const focusedId = await geminiService.getFocusTask(tasks);
-        setFocusTaskId(focusedId);
-      } catch (error) { console.error("Focus mode failed", error); } 
-      finally { setIsAnalyzing(false); }
-  };
-
   // --- Filtering & Sorting ---
   const displayedTasks = useMemo(() => {
     const today = new Date();
@@ -196,17 +167,7 @@ const App: React.FC = () => {
         filtered = filtered.filter(task => task.importance === filterBy);
     }
 
-    const importanceOrder = [Importance.CRITICAL, Importance.HIGH, Importance.MEDIUM, Importance.LOW];
-    return [...filtered].sort((a, b) => {
-        if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        if (sortBy === 'importance') return importanceOrder.indexOf(a.importance) - importanceOrder.indexOf(b.importance);
-        if (sortBy === 'dueDate') {
-            if (!a.dueDate) return 1;
-            if (!b.dueDate) return -1;
-            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-        }
-        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-    });
+    return sortTasks(filtered, sortBy);
   }, [tasks, currentView, filterBy, sortBy]);
 
   const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
@@ -222,7 +183,7 @@ const App: React.FC = () => {
       {focusTaskId && (
         <div className="fixed top-0 left-0 right-0 bg-indigo-600/50 backdrop-blur-md p-4 text-center z-50 flex justify-between items-center animate-fade-in">
             <h2 className="text-xl font-bold">Your Next Step</h2>
-            <button onClick={() => setFocusTaskId(null)} className="font-semibold hover:bg-white/10 px-3 py-1 rounded-md">See All Tasks</button>
+            <button onClick={clearFocusTask} className="font-semibold hover:bg-white/10 px-3 py-1 rounded-md">See All Tasks</button>
         </div>
       )}
       <Sidebar 
@@ -237,23 +198,25 @@ const App: React.FC = () => {
             <header className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-100">{currentTitle}</h1>
                 <div className="flex items-center gap-4">
-                  <button onClick={handleFocus} disabled={isAnalyzing || activeTasksCount < 2} className="hidden sm:flex items-center gap-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
+                  <button onClick={findFocusTask} disabled={isAnalyzing || activeTasksCount < 2} className="hidden sm:flex items-center gap-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
                     <StarIcon className="w-5 h-5"/> <span>Start Here</span>
                   </button>
-                  <button onClick={handleAnalyze} disabled={isAnalyzing || activeTasksCount === 0} className="hidden sm:flex items-center gap-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
-                      {isAnalyzing && !analysisResult ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : <BrainIcon className="w-5 h-5"/>}
+                  <button 
+                    onClick={handleAnalyze} 
+                    disabled={isAnalyzing || activeTasksCount === 0} 
+                    className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-full transition-all duration-300 transform hover:scale-105"
+                  >
+                      <BrainIcon className="w-5 h-5"/>
                       <span>Analyze</span>
                   </button>
                 </div>
             </header>
             
-            {analysisResult && <AIAnalysisResult report={analysisResult} onClose={() => setAnalysisResult(null)} />}
-            
             <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
                 {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} /></div>}
 
                 {currentView.type === 'calendar' ? (
-                    <CalendarView tasks={tasks} projects={projects} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={setSelectedTask} />
+                    <CalendarView tasks={tasks} projects={projects} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onUpdateTask={updateTask} />
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-4 mb-6">
@@ -274,7 +237,7 @@ const App: React.FC = () => {
                       {displayedTasks.length > 0 ? (
                         displayedTasks.map(task => (
                           <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
-                              <TaskItem task={task} projects={projects} onSelectTask={setSelectedTask} onDeleteTask={deleteTask} onComplete={handleCompleteTask} isFocused={focusTaskId === task.id} />
+                              <TaskItem task={task} projects={projects} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
                           </div>
                         ))
                       ) : (
@@ -290,18 +253,25 @@ const App: React.FC = () => {
         </div>
       </main>
       <Chatbot 
-        isOpen={isChatOpen} 
-        onToggle={() => setIsChatOpen(prev => !prev)} 
+        isOpen={modal.type === 'chatbot'} 
+        onToggle={() => setModal(prev => prev.type === 'chatbot' ? { type: 'none' } : { type: 'chatbot' })} 
         messages={chatHistory} 
         onSendMessage={handleSendMessage}
         isLoading={isChatLoading}
       />
-      {selectedTask && (
+      {modal.type === 'task-detail' && (
         <TaskDetailModal
-          task={selectedTask}
+          task={modal.task}
           projects={projects}
-          onClose={() => setSelectedTask(null)}
+          onClose={() => setModal({ type: 'none' })}
           onUpdateTask={updateTask}
+        />
+      )}
+      {modal.type === 'ai-analysis' && (
+        <AIAnalysisModal
+            isLoading={isAnalyzing}
+            report={modal.report}
+            onClose={() => setModal({ type: 'none' })}
         />
       )}
       <Toast message="Task deleted" isVisible={!!undoState} onAction={handleUndoDelete} actionText="Undo" />

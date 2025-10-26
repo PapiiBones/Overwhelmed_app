@@ -9,9 +9,10 @@ interface CalendarViewProps {
   onDeleteTask: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
   onSelectTask: (task: Task) => void;
+  onUpdateTask: (id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onDeleteTask, onComplete, onSelectTask }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
@@ -94,6 +95,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, onDeleteTa
           onDeleteTask={onDeleteTask} 
           onComplete={onComplete}
           onSelectTask={onSelectTask}
+          onUpdateTask={onUpdateTask}
         />
       )}
     </>

@@ -22,6 +22,7 @@ export interface Task {
   projectId?: string;
   isProcessing?: boolean;
   notes?: string;
+  isPriority?: boolean;
 }
 
 export interface ChatMessage {
@@ -38,3 +39,11 @@ export interface AnalysisReport {
   summary: string;
   priorities: string[];
 }
+
+export type SortBy = 'timestamp' | 'importance' | 'dueDate';
+
+export type ModalState =
+  | { type: 'none' }
+  | { type: 'task-detail'; task: Task }
+  | { type: 'ai-analysis'; report: AnalysisReport | null }
+  | { type: 'chatbot' };

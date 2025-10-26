@@ -10,9 +10,80 @@ interface TaskDetailModalProps {
   onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
 }
 
+// Keywords that suggest a task description contains structured data worth parsing.
+const SMART_UPDATE_KEYWORDS = [
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
+  'today', 'tomorrow', 'next week', 'next month', 'tonight',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  'am', 'pm', 'o\'clock', 'noon', 'midnight',
+  'by', 'at', 'on', 'due', 'in', 'for',
+  'critical', 'high', 'medium', 'low', 'urgent', 'important',
+  'call', 'email', 'meet', 'text', 'remind',
+  'project', 'move to',
+];
+const smartUpdateRegex = new RegExp(`\\b(${SMART_UPDATE_KEYWORDS.join('|')})\\b`, 'i');
+
+const shouldAttemptSmartUpdate = (text: string): boolean => {
+  return smartUpdateRegex.test(text);
+};
+
+const markdownToHtml = (markdown: string): string => {
+    if (!markdown) return '';
+
+    const lines = markdown
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .split('\n');
+    
+    let html = '';
+    let inList = false;
+
+    for (const line of lines) {
+        let processedLine = ' ' + line + ' ';
+
+        // Links
+        processedLine = processedLine.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        
+        // Bold and Italic
+        processedLine = processedLine.replace(/(\s)\*\*(.*?)\*\*(\s)/g, '$1<strong>$2</strong>$3');
+        processedLine = processedLine.replace(/(\s)__(.*?)__(\s)/g, '$1<strong>$2</strong>$3');
+        processedLine = processedLine.replace(/(\s)\*(.*?)\*(\s)/g, '$1<em>$2</em>$3');
+        processedLine = processedLine.replace(/(\s)_(.*?)_(\s)/g, '$1<em>$2</em>$3');
+
+        // Lists
+        if (processedLine.trim().startsWith('- ')) {
+            if (!inList) {
+                html += '<ul>';
+                inList = true;
+            }
+            html += `<li>${processedLine.trim().substring(2)}</li>`;
+        } else {
+            if (inList) {
+                html += '</ul>';
+                inList = false;
+            }
+            // Paragraphs for non-empty lines
+            if (processedLine.trim()) {
+                html += `<p>${processedLine.trim()}</p>`;
+            }
+        }
+    }
+
+    if (inList) {
+        html += '</ul>';
+    }
+
+    return html;
+};
+
+
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClose, onUpdateTask }) => {
   const [editState, setEditState] = useState<Partial<Task>>(task);
   const [isThinking, setIsThinking] = useState(false);
+  const [notesView, setNotesView] = useState<'write' | 'preview'>('write');
   const contentInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -21,37 +92,42 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
   }, [task]);
   
   const handleSave = async () => {
-    setIsThinking(true);
-    try {
-      const contentHasChanged = editState.content?.trim() !== task.content.trim() && editState.content?.trim();
-      
-      let allChanges = { ...editState };
-      
-      if (contentHasChanged) {
-        // If content changed, get AI updates and merge them. AI updates take precedence.
-        const aiUpdatedFields = await geminiService.getSmartUpdate(editState.content!, task, projects);
-        allChanges = { ...editState, ...aiUpdatedFields };
-      }
-      
-      // Determine the final set of fields that actually changed from the original task
-      const finalChanges: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
-      (Object.keys(allChanges) as Array<keyof Task>).forEach(key => {
-        if (key !== 'id' && key !== 'timestamp' && allChanges[key] !== task[key]) {
-          (finalChanges as any)[key] = allChanges[key];
+    const contentHasChanged = editState.content?.trim() !== task.content.trim() && editState.content?.trim();
+    
+    // Helper to diff the new state against the original task
+    const getChangedFields = (currentState: Partial<Task>): Partial<Omit<Task, 'id' | 'timestamp'>> => {
+      const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
+      (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
+        if (key !== 'id' && key !== 'timestamp' && currentState[key] !== task[key]) {
+          (changes as any)[key] = currentState[key];
         }
       });
-      
-      if (Object.keys(finalChanges).length > 0) {
-        onUpdateTask(task.id, finalChanges);
+      return changes;
+    };
+
+    let changesToSave: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
+
+    if (contentHasChanged && editState.content && shouldAttemptSmartUpdate(editState.content)) {
+      setIsThinking(true);
+      try {
+        const aiUpdatedFields = await geminiService.getSmartUpdate(editState.content, task, projects);
+        const allChanges = { ...editState, ...aiUpdatedFields };
+        changesToSave = getChangedFields(allChanges);
+      } catch (error) {
+        console.error("Smart Update failed, saving manual changes.", error);
+        changesToSave = getChangedFields(editState);
+      } finally {
+        setIsThinking(false);
       }
-    } catch (error) {
-      console.error("Smart Update on save failed", error);
-      // Fallback to only saving manual edits if AI fails
-      onUpdateTask(task.id, editState);
-    } finally {
-      setIsThinking(false);
-      onClose();
+    } else {
+      changesToSave = getChangedFields(editState);
     }
+
+    if (Object.keys(changesToSave).length > 0) {
+      onUpdateTask(task.id, changesToSave);
+    }
+    
+    onClose();
   };
   
   const formatDateForInput = (isoDate?: string) => {
@@ -96,13 +172,26 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
             </div>
             <div>
                 <label htmlFor="task-notes" className="block text-sm font-medium text-slate-400 mb-1">Notes</label>
-                <textarea
-                    id="task-notes"
-                    placeholder="Add more details..."
-                    value={editState.notes || ''}
-                    onChange={(e) => setEditState(s => ({...s, notes: e.target.value}))}
-                    className="w-full bg-slate-700 text-slate-100 p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 h-24 resize-y placeholder:text-slate-500"
-                />
+                <div className="bg-slate-900/50 border border-slate-700 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500">
+                    <div className="flex items-center gap-1 p-1 border-b border-slate-700 bg-slate-800/50">
+                        <button onClick={() => setNotesView('write')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${notesView === 'write' ? 'bg-slate-600 text-slate-100' : 'text-slate-400 hover:bg-slate-700'}`}>Write</button>
+                        <button onClick={() => setNotesView('preview')} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${notesView === 'preview' ? 'bg-slate-600 text-slate-100' : 'text-slate-400 hover:bg-slate-700'}`}>Preview</button>
+                    </div>
+                    {notesView === 'write' ? (
+                         <textarea
+                            id="task-notes"
+                            placeholder="Add more details... (Markdown supported)"
+                            value={editState.notes || ''}
+                            onChange={(e) => setEditState(s => ({...s, notes: e.target.value}))}
+                            className="w-full bg-transparent text-slate-200 p-2 outline-none h-24 resize-y placeholder:text-slate-500"
+                        />
+                    ) : (
+                        <div 
+                            className="p-3 min-h-[112px] text-slate-300 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_strong]:font-bold [&_em]:italic [&_p]:mb-2 last:[&_p]:mb-0 [&_a]:text-indigo-400 [&_a]:hover:underline"
+                            dangerouslySetInnerHTML={{ __html: markdownToHtml(editState.notes || '') || '<p class="text-slate-500">Nothing to preview.</p>' }} 
+                        />
+                    )}
+                </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
