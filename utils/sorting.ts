@@ -1,6 +1,4 @@
-import { Task, Importance } from '../types';
-
-export type SortBy = 'timestamp' | 'importance' | 'dueDate';
+import { Task, Importance, SortBy } from '../types';
 
 const importanceOrder: Importance[] = [Importance.CRITICAL, Importance.HIGH, Importance.MEDIUM, Importance.LOW];
 

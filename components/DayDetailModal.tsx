@@ -45,7 +45,6 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
         <main className="flex-grow p-4 overflow-y-auto space-y-4">
           {sortedTasks.length > 0 ? (
             sortedTasks.map(task => (
-              // Fix: Pass the 'tags' prop to TaskItem.
               <TaskItem
                 key={task.id}
                 task={task}
@@ -70,4 +69,4 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
   );
 };
 
-   export default DayDetailModal;
+export default DayDetailModal;

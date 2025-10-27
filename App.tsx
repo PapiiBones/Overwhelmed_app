@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings, Tag, ToastState } from './types';
+// Fix: Import AppState from types.ts
+import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings, Tag, ToastState, SidebarItem, AppState } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
@@ -14,19 +15,20 @@ import authService from './services/mockAuthService';
 import { geminiService } from './services/geminiService';
 import { BrainIcon, StarIcon } from './components/Icons';
 import { PROJECT_COLORS } from './constants';
-import { useAppReducer, AppState } from './hooks/useAppReducer';
+// Fix: Remove AppState from this import as it's now imported from types.ts
+import { useAppReducer } from './hooks/useAppReducer';
 import { useAIActions } from './hooks/useAIActions';
 import { sortTasks } from './utils/sorting';
 import { calculateNextDueDate } from './utils/date';
 
-type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar' | 'tag', projectId?: string, tagId?: string };
+type View = { type: 'project' | 'tag', id: string } | { type: 'inbox' | 'today' | 'upcoming' | 'calendar' };
 
 const App: React.FC = () => {
   const { state, dispatch } = useAppReducer();
-  const { tasks, projects, tags, chatHistory, toastState, settings } = state;
+  const { tasks, projects, tags, sidebarItems, chatHistory, toastState, settings } = state;
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentView, setCurrentView] = useState<View>({ type: 'inbox' });
+  const [currentViewId, setCurrentViewId] = useState<string>('inbox');
   const [filterBy, setFilterBy] = useState<Importance | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortBy>('timestamp');
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,9 +81,10 @@ const App: React.FC = () => {
     authService.logout();
     setCurrentUser(null);
     dispatch({ type: 'RESET_STATE' });
-    setCurrentView({ type: 'inbox' });
+    setCurrentViewId('inbox');
   };
   
+  // --- Settings & Data Management ---
   const handleUpdateSettings = (newSettings: Partial<AppSettings>) => {
     dispatch({ type: 'UPDATE_SETTINGS', payload: newSettings });
   };
@@ -117,7 +120,7 @@ const App: React.FC = () => {
                       setModal({ type: 'none' });
                   } catch (error) {
                       console.error("Error parsing imported file:", error);
-                      alert("Error: Could not import data. The file might be corrupted.");
+                      dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'Could not import data. The file might be corrupted.' }});
                   }
               }
           };
@@ -133,11 +136,9 @@ const App: React.FC = () => {
     const handleThemeChange = () => {
       const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       if (settings.theme === 'dark' || (settings.theme === 'system' && isSystemDark)) {
-        document.documentElement.classList.add('dark');
         document.documentElement.classList.remove('light');
       } else {
         document.documentElement.classList.add('light');
-        document.documentElement.classList.remove('dark');
       }
     };
     handleThemeChange();
@@ -174,23 +175,13 @@ const App: React.FC = () => {
   }, [tasks, settings.reminderTime]);
   
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        const target = e.target as HTMLElement;
-        if (target.matches('input, select, textarea')) return;
-        if (e.key === 'n' || e.key === 'N') {
-            e.preventDefault();
-            document.getElementById('add-task-input')?.focus();
-        }
-        if (settings.aiEnabled && (e.key === 'c' || e.key === 'C')) {
-            e.preventDefault();
-            setModal(prev => prev.type === 'chatbot' ? { type: 'none' } : { type: 'chatbot' });
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [settings.aiEnabled]);
-
-  // --- Tag Management ---
+    const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
+    if(currentViewItem?.type === 'calendar') {
+        setSearchTerm('');
+    }
+  }, [currentViewId, sidebarItems]);
+  
+  // --- CRUD Operations ---
   const handleTagNames = useCallback((tagNames: string[]): string[] => {
     const tagIds: string[] = [];
     tagNames.forEach(name => {
@@ -212,29 +203,8 @@ const App: React.FC = () => {
     return tagIds;
   }, [tags, dispatch]);
 
-  const addTag = useCallback((name: string) => {
-      const newTag: Tag = {
-          id: crypto.randomUUID(),
-          name: name.trim(),
-          color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length]
-      };
-      dispatch({ type: 'ADD_TAG', payload: newTag });
-      return newTag;
-  }, [dispatch, tags.length]);
-
-  const deleteTag = useCallback((id: string) => {
-      dispatch({ type: 'DELETE_TAG', payload: id });
-      if (currentView.type === 'tag' && currentView.tagId === id) {
-          setCurrentView({ type: 'inbox' });
-      }
-  }, [dispatch, currentView]);
-
-  const updateTag = useCallback((tag: Tag) => {
-      dispatch({ type: 'UPDATE_TAG', payload: tag });
-  }, [dispatch]);
-
-  // --- CRUD Operations ---
   const addTask = useCallback(async (rawContent: string) => {
+    const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
     const provisionalId = crypto.randomUUID();
     let provisionalTask: Task = {
       id: provisionalId,
@@ -242,11 +212,9 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
       completed: false,
       importance: Importance.MEDIUM,
-      notes: '',
-      isPriority: false,
-      projectId: currentView.type === 'project' ? currentView.projectId : undefined,
       subtasks: [],
       tagIds: [],
+      projectId: currentViewItem?.type === 'project' ? currentViewItem.id : undefined,
     };
     
     if (settings.aiEnabled && settings.apiKey) {
@@ -267,12 +235,12 @@ const App: React.FC = () => {
         } catch(error) {
             console.error("Failed to smart-add task", error);
             dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { isProcessing: false } } });
-            dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI enhancement failed. Please check your API key in Settings.' } });
+            dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI enhancement failed. Check API key.' } });
         }
     } else {
         dispatch({ type: 'ADD_TASK', payload: provisionalTask });
     }
-  }, [dispatch, currentView, settings, handleTagNames]);
+  }, [dispatch, sidebarItems, currentViewId, settings, handleTagNames]);
 
   const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>, aiUpdate?: { subtasks?: string[]; tags?: string[] }) => {
     let finalUpdates = { ...updatedFields };
@@ -291,7 +259,6 @@ const App: React.FC = () => {
   
   const handleUndoDelete = useCallback(() => {
     dispatch({ type: 'RESTORE_UNDO_STATE' });
-    dispatch({ type: 'SET_TOAST_STATE', payload: null });
   }, [dispatch]);
 
   const deleteTask = useCallback((id: string) => {
@@ -299,41 +266,24 @@ const App: React.FC = () => {
     if (!taskToDelete) return;
     const taskIndex = tasks.indexOf(taskToDelete);
     dispatch({ type: 'DELETE_TASK', payload: id });
-    // Fix: Add explicit type `ToastState` to prevent TypeScript from widening the `type` property to `string`.
     const toastData: ToastState = { type: 'undo', message: 'Task deleted', actionText: 'Undo', onAction: handleUndoDelete, data: { task: taskToDelete, index: taskIndex }};
     dispatch({ type: 'SET_TOAST_STATE', payload: toastData });
   }, [dispatch, tasks, handleUndoDelete]);
 
   const handleCompleteTask = useCallback((id: string, completed: boolean) => {
-    if (completed) {
-      const task = tasks.find(t => t.id === id);
-      if (task?.recurrenceRule) {
-        const nextDueDate = calculateNextDueDate(task.dueDate || new Date().toISOString(), task.recurrenceRule);
-        updateTask(id, { dueDate: nextDueDate });
-        if (completeSoundRef.current) {
-          completeSoundRef.current.currentTime = 0;
-          completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
-        }
-        return;
-      }
+    const task = tasks.find(t => t.id === id);
+    if (completed && task?.recurrenceRule) {
+      const nextDueDate = calculateNextDueDate(task.dueDate || new Date().toISOString(), task.recurrenceRule);
+      updateTask(id, { dueDate: nextDueDate });
+    } else {
+      updateTask(id, { completed });
     }
     if (completed && completeSoundRef.current) {
         completeSoundRef.current.currentTime = 0;
         completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
     }
-    updateTask(id, { completed });
   }, [tasks, updateTask]);
   
-  const addProject = useCallback((name: string) => {
-    const newProject: Project = { id: crypto.randomUUID(), name, color: PROJECT_COLORS[projects.length % PROJECT_COLORS.length] };
-    dispatch({ type: 'ADD_PROJECT', payload: newProject });
-  }, [dispatch, projects.length]);
-
-  const deleteProject = useCallback((id: string) => {
-    dispatch({ type: 'DELETE_PROJECT', payload: id });
-    if (currentView.type === 'project' && currentView.projectId === id) { setCurrentView({ type: 'inbox' }); }
-  }, [dispatch, currentView]);
-
   // --- AI Actions ---
   const handleSendMessage = async (newMessage: string) => {
     const userMessage: ChatMessage = { role: 'user', parts: [{ text: newMessage }] };
@@ -372,23 +322,30 @@ const App: React.FC = () => {
     setModal({ type: 'ai-analysis', report });
   };
   
-  // --- Filtering & Sorting ---
+  // --- Filtering, Sorting, and View Logic ---
   const displayedTasks = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const endOfToday = new Date(today); endOfToday.setHours(23, 59, 59, 999);
     const upcomingEndDate = new Date(today); upcomingEndDate.setDate(today.getDate() + 7);
+    
+    const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
     let filtered = tasks;
-    switch (currentView.type) {
-        case 'inbox': filtered = tasks.filter(t => !t.projectId); break;
-        case 'today': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= endOfToday); break;
-        case 'upcoming': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) > endOfToday && new Date(t.dueDate) <= upcomingEndDate); break;
-        case 'project': filtered = tasks.filter(t => t.projectId === currentView.projectId); break;
-        case 'tag': filtered = tasks.filter(t => t.tagIds?.includes(currentView.tagId || '')); break;
+
+    if (currentViewItem) {
+        switch (currentViewItem.type) {
+            case 'inbox': filtered = tasks.filter(t => !t.projectId); break;
+            case 'today': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= endOfToday); break;
+            case 'upcoming': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) > endOfToday && new Date(t.dueDate) <= upcomingEndDate); break;
+            case 'project': filtered = tasks.filter(t => t.projectId === currentViewItem.id); break;
+            case 'tag': filtered = tasks.filter(t => t.tagIds?.includes(currentViewItem.id || '')); break;
+        }
     }
-    if (currentView.type !== 'calendar' && filterBy !== 'all') {
+    
+    if (currentViewItem?.type !== 'calendar' && filterBy !== 'all') {
         filtered = filtered.filter(task => task.importance === filterBy);
     }
-    if (currentView.type !== 'calendar' && searchTerm) {
+    
+    if (currentViewItem?.type !== 'calendar' && searchTerm) {
         const lowercasedTerm = searchTerm.toLowerCase();
         filtered = filtered.filter(task => {
             const project = projects.find(p => p.id === task.projectId);
@@ -402,18 +359,14 @@ const App: React.FC = () => {
             );
         });
     }
+
     return sortTasks(filtered, sortBy);
-  }, [tasks, projects, tags, currentView, filterBy, sortBy, searchTerm]);
+  }, [tasks, projects, tags, sidebarItems, currentViewId, filterBy, sortBy, searchTerm]);
 
   const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
   const isAddingTask = useMemo(() => tasks.some(t => t.isProcessing), [tasks]);
   
-  const viewTitles: {[key: string]: string} = { inbox: 'Inbox', today: 'Today', upcoming: 'Upcoming' };
-  const currentTitle = useMemo(() => {
-    if (currentView.type === 'project') return projects.find(p => p.id === currentView.projectId)?.name || 'Project';
-    if (currentView.type === 'tag') return `#${tags.find(t => t.id === currentView.tagId)?.name}` || '#Tag';
-    return viewTitles[currentView.type] || 'Planner';
-  }, [currentView, projects, tags]);
+  const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
 
   return (
     <div className={`h-screen flex font-sans transition-all duration-500 ${focusTaskId ? 'pt-16' : 'pt-0'}`}>
@@ -424,9 +377,10 @@ const App: React.FC = () => {
         </div>
       )}
       <Sidebar 
-        projects={projects} tags={tags} currentView={currentView} onSelectView={setCurrentView}
-        onAddProject={addProject} onDeleteProject={deleteProject} 
-        onAddTag={(name) => addTag(name)} onDeleteTag={deleteTag} onUpdateTag={updateTag}
+        sidebarItems={sidebarItems}
+        currentViewId={currentViewId}
+        onSelectView={setCurrentViewId}
+        dispatch={dispatch}
         currentUser={currentUser}
         onLoginClick={() => setModal({ type: 'login' })} onLogoutClick={handleLogout}
         onSettingsClick={() => setModal({ type: 'settings' })}
@@ -434,7 +388,7 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col overflow-y-auto">
         <div className="p-4 md:p-8 flex-grow">
             <header className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl md:text-4xl font-bold text-[var(--color-text-primary)]">{currentTitle}</h1>
+                <h1 className="text-3xl md:text-4xl font-bold text-[var(--color-text-primary)]">{currentViewItem?.label || 'Overwhelmed'}</h1>
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
@@ -445,15 +399,16 @@ const App: React.FC = () => {
                     <StarIcon className="w-5 h-5"/> <span>Start Here</span>
                   </button>
                   <button onClick={handleAnalyze} disabled={!settings.aiEnabled || isAnalyzing || activeTasksCount === 0} 
-                    className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-full transition-all duration-300 transform hover:scale-105">
+                    style={{ backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))` }}
+                    className="hidden sm:flex items-center gap-2 disabled:bg-none disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-full transition-all duration-300 transform hover:scale-105">
                       <BrainIcon className="w-5 h-5"/> <span>Analyze</span>
                   </button>
                 </div>
             </header>
             
             <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} settings={settings} dispatch={dispatch} /></div>}
-                {currentView.type === 'calendar' ? (
+                {currentViewItem?.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} settings={settings} dispatch={dispatch} /></div>}
+                {currentViewItem?.type === 'calendar' ? (
                     <CalendarView tasks={tasks} projects={projects} tags={tags} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onUpdateTask={updateTask} />
                 ) : (
                   <>
@@ -502,7 +457,14 @@ const App: React.FC = () => {
           messages={chatHistory} onSendMessage={handleSendMessage} isLoading={isChatLoading} />
       }
       {modal.type === 'task-detail' && (
-        <TaskDetailModal task={modal.task} projects={projects} tags={tags} onClose={() => setModal({ type: 'none' })} onUpdateTask={updateTask} onAddTag={addTag} settings={settings} dispatch={dispatch} />
+        <TaskDetailModal task={modal.task} projects={projects} tags={tags} onClose={() => setModal({ type: 'none' })} 
+          onUpdateTask={updateTask} 
+          onAddTag={(name) => {
+            const newTag = { id: crypto.randomUUID(), name, color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length] };
+            dispatch({ type: 'ADD_TAG', payload: newTag });
+            return newTag;
+          }} 
+          settings={settings} dispatch={dispatch} />
       )}
       {modal.type === 'ai-analysis' && (
         <AIAnalysisModal isLoading={isAnalyzing} report={modal.report} onClose={() => setModal({ type: 'none' })} />

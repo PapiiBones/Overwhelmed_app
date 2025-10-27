@@ -12,7 +12,6 @@ export const calculateNextDueDate = (currentDueDate: string, rule: RecurrenceRul
       date.setDate(date.getDate() + 7 * interval);
       break;
     case 'monthly':
-      // This is a simple implementation; a more robust one would handle end-of-month cases.
       date.setMonth(date.getMonth() + interval);
       break;
   }

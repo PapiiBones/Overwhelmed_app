@@ -23,7 +23,6 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
   
   useEffect(() => {
     if (isOpen) {
-      // Delay focus slightly to allow for transition
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
@@ -44,7 +43,10 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
     <>
       <button
         onClick={onToggle}
-        className="fixed bottom-6 right-6 bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-4 rounded-full shadow-lg hover:from-indigo-400 hover:to-purple-500 transition-transform hover:scale-110 z-50"
+        style={{ 
+            backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))`,
+        }}
+        className="fixed bottom-6 right-6 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-50"
         aria-label={isOpen ? "Close AI assistant" : "Open AI assistant"}
       >
         {isOpen ? <CloseIcon className="w-8 h-8" /> : <ChatBubbleIcon className="w-8 h-8" />}
@@ -52,8 +54,14 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
 
       {isOpen && (
         <div className="fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-[var(--color-sidebar-bg)] backdrop-blur-md rounded-xl shadow-2xl flex flex-col z-50 animate-slide-in-up border border-[var(--color-sidebar-border)]">
-          <header className="flex justify-between items-center p-4 border-b border-[var(--color-sidebar-border)] bg-gradient-to-r from-indigo-500/20 to-purple-600/20">
-            <h3 className="font-bold text-lg text-[var(--color-text-primary)]">AI Assistant</h3>
+          <header className="flex justify-between items-center p-4 border-b border-[var(--color-sidebar-border)]"
+             style={{ 
+                backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))`,
+                backgroundClip: 'text',
+                color: 'transparent'
+             }}
+          >
+            <h3 className="font-bold text-lg">AI Assistant</h3>
           </header>
           <div className="flex-grow p-4 overflow-y-auto">
             <div className="flex flex-col gap-4">

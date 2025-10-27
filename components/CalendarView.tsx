@@ -40,11 +40,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, tags, onDe
     const taskId = e.dataTransfer.getData("taskId");
     const originalTask = tasks.find(t => t.id === taskId);
     if (originalTask && originalTask.dueDate) {
+      if (originalTask.recurrenceRule) {
+        if (!window.confirm("This is a recurring task. Moving it will break the recurrence pattern. Do you want to continue?")) {
+          setDragOverDate(null);
+          return;
+        }
+      }
       const originalDate = new Date(originalTask.dueDate);
       const newDate = new Date(day);
-      // Preserve original time
       newDate.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds(), originalDate.getMilliseconds());
-      onUpdateTask(taskId, { dueDate: newDate.toISOString() });
+      onUpdateTask(taskId, { dueDate: newDate.toISOString(), recurrenceRule: undefined });
     }
     setDragOverDate(null);
   };
@@ -154,16 +159,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, projects, tags, onDe
           <div className="flex items-center gap-4">
             <button onClick={() => handleDateChange(-1)} className="p-2 rounded-full hover:bg-[var(--color-surface-tertiary)] transition-colors"><ChevronLeftIcon className="w-6 h-6" /></button>
             <h2 className="text-xl sm:text-2xl font-bold text-center">
-                {viewMode === 'month' 
-                    ? currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-                    : `${new Date(currentDate.setDate(currentDate.getDate() - currentDate.getDay())).toLocaleDateString('default', { month: 'short', day: 'numeric' })} - ${new Date(currentDate.setDate(currentDate.getDate() - currentDate.getDay() + 6)).toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                }
+                {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
             </h2>
             <button onClick={() => handleDateChange(1)} className="p-2 rounded-full hover:bg-[var(--color-surface-tertiary)] transition-colors"><ChevronRightIcon className="w-6 h-6" /></button>
           </div>
           <div className="flex items-center gap-2 bg-[var(--color-surface-secondary)] p-1 rounded-full border border-[var(--color-border-primary)]">
-            <button onClick={() => setViewMode('month')} className={`px-3 py-1 text-sm rounded-full ${viewMode === 'month' ? 'bg-[var(--color-surface-tertiary)]' : 'hover:bg-[var(--color-nav-item-hover-bg)]'}`}>Month</button>
-            <button onClick={() => setViewMode('week')} className={`px-3 py-1 text-sm rounded-full ${viewMode === 'week' ? 'bg-[var(--color-surface-tertiary)]' : 'hover:bg-[var(--color-nav-item-hover-bg)]'}`}>Week</button>
+            <button onClick={() => setViewMode('month')} className={`px-3 py-1 text-sm rounded-full ${viewMode === 'month' ? 'bg-[var(--color-surface-tertiary)] text-[var(--color-text-accent)]' : 'hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-secondary)]'}`}>Month</button>
+            <button onClick={() => setViewMode('week')} className={`px-3 py-1 text-sm rounded-full ${viewMode === 'week' ? 'bg-[var(--color-surface-tertiary)] text-[var(--color-text-accent)]' : 'hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-secondary)]'}`}>Week</button>
           </div>
         </div>
         <div className="grid grid-cols-7 gap-1 text-center font-semibold text-[var(--color-text-secondary)] text-xs sm:text-sm mb-2">

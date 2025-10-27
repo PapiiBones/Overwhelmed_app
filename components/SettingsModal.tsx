@@ -21,6 +21,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdateSetting
 
   const handleApiKeySave = () => {
     onUpdateSettings({ apiKey });
+    alert("API Key saved!");
   };
   
   const handleDeleteClick = () => {
@@ -103,7 +104,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdateSetting
                 id="reminder-time"
                 value={settings.reminderTime}
                 onChange={(e) => onUpdateSettings({ reminderTime: parseInt(e.target.value, 10) as any })}
-                className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value={5}>5 minutes before</option>
                 <option value={10}>10 minutes before</option>
@@ -118,19 +119,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdateSetting
           <div>
             <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">Data Management</h3>
             <div className="space-y-3">
-              <p className="text-slate-400 text-sm">
+              <p className="text-[var(--color-text-secondary)] text-sm">
                 Export your data as a backup, or import a file to restore your planner.
               </p>
               <div className="flex gap-4">
                 <button
                   onClick={onExport}
-                  className="flex-1 px-4 py-2 font-semibold text-white bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] rounded-md transition-colors"
+                  className="flex-1 px-4 py-2 font-semibold text-[var(--color-text-primary)] bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] rounded-md transition-colors"
                 >
                   Export Data
                 </button>
                 <button
                   onClick={handleImportClick}
-                  className="flex-1 px-4 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors"
+                  style={{ backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))` }}
+                  className="flex-1 px-4 py-2 font-semibold text-white rounded-md transition-all"
                 >
                   Import Data
                 </button>

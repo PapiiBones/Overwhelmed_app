@@ -40,7 +40,7 @@ const markdownToHtml = (markdown: string): string => {
     let inList = false;
     for (const line of lines) {
         let processedLine = ' ' + line + ' ';
-        processedLine = processedLine.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        processedLine = processedLine.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">$1</a>');
         processedLine = processedLine.replace(/(\s)\*\*(.*?)\*\*(\s)/g, '$1<strong>$2</strong>$3');
         processedLine = processedLine.replace(/(\s)__(.*?)__(\s)/g, '$1<strong>$2</strong>$3');
         processedLine = processedLine.replace(/(\s)\*(.*?)\*(\s)/g, '$1<em>$2</em>$3');
@@ -72,7 +72,7 @@ const getContrastingTextColor = (hexcolor: string) => {
     const g = parseInt(hexcolor.substr(2, 2), 16);
     const b = parseInt(hexcolor.substr(4, 2), 16);
     const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#FFFFFF';
+    return (yiq >= 128) ? 'var(--color-text-primary)' : 'var(--color-bg-gradient-start)';
 };
 
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags, onClose, onUpdateTask, onAddTag, settings, dispatch }) => {
@@ -95,7 +95,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
   const handleSave = async () => {
     const contentHasChanged = editState.content?.trim() !== task.content.trim() && editState.content?.trim();
     
-    // Fix: Correctly handle subtask type for getChangedFields.
     const getChangedFields = (currentState: Partial<Task>): Partial<Omit<Task, 'id' | 'timestamp'>> => {
       const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
       (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
@@ -118,16 +117,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
     if (settings.aiEnabled && settings.apiKey && contentHasChanged && editState.content && shouldAttemptSmartUpdate(editState.content)) {
       setIsThinking(true);
       try {
-        // Fix: Destructure the API response to handle string[] for subtasks.
         const { subtasks: aiSubtasks, tags: aiTags, ...restOfAiFields } = await geminiService.getSmartUpdate(editState.content, task, projects, settings.apiKey);
-        
-        // This conversion logic will be handled in the App component.
         const allChanges: Partial<Task> = { ...editState, ...restOfAiFields };
         const changesToSave = getChangedFields(allChanges);
         onUpdateTask(task.id, changesToSave, { subtasks: aiSubtasks, tags: aiTags });
       } catch (error) {
         console.error("Smart Update failed, saving manual changes.", error);
-        dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI update failed. Check API key. Manual changes were saved.' } });
+        dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI update failed. Check API key.' } });
         onUpdateTask(task.id, getChangedFields(editState));
       } finally {
         setIsThinking(false);
@@ -152,8 +148,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
 
   const handleRecurrenceChange = (frequency: RecurrenceRule['frequency'] | 'never') => {
     if (frequency === 'never') {
-      const { recurrenceRule, ...rest } = editState;
-      setEditState(rest);
+      setEditState(s => ({ ...s, recurrenceRule: undefined }));
     } else {
       setEditState(s => ({ ...s, recurrenceRule: { frequency, interval: 1 } }));
     }
@@ -284,7 +279,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                                 type="text"
                                 value={subtask.content}
                                 onChange={(e) => handleSubtaskChange(subtask.id, e.target.value)}
-                                className={`w-full bg-transparent text-[var(--color-text-secondary)] outline-none focus:bg-[var(--color-surface-secondary)]/50 p-1 rounded-md ${subtask.completed ? 'line-through text-[var(--color-text-tertiary)]' : ''}`}
+                                className={`w-full bg-transparent text-[var(--color-text-primary)] outline-none focus:bg-[var(--color-surface-secondary)]/50 p-1 rounded-md ${subtask.completed ? 'line-through text-[var(--color-text-tertiary)]' : ''}`}
                             />
                             <button onClick={() => handleSubtaskDelete(subtask.id)} className="text-[var(--color-text-tertiary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <TrashIcon className="w-4 h-4" />
@@ -298,7 +293,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                             value={newSubtask}
                             onChange={(e) => setNewSubtask(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
-                            className="w-full bg-[var(--color-surface-secondary)]/50 text-[var(--color-text-secondary)] p-1 rounded-md outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)]"
+                            className="w-full bg-[var(--color-surface-secondary)]/50 text-[var(--color-text-primary)] p-1 rounded-md outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)]"
                          />
                          <button onClick={handleAddSubtask} className="p-1.5 bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] rounded-md">
                             <PlusIcon className="w-4 h-4" />
@@ -323,7 +318,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         />
                     ) : (
                         <div 
-                            className="p-3 min-h-[112px] text-[var(--color-text-secondary)] [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_strong]:font-bold [&_em]:italic [&_p]:mb-2 last:[&_p]:mb-0 [&_a]:text-indigo-400 [&_a]:hover:underline"
+                            className="p-3 min-h-[112px] text-[var(--color-text-secondary)] [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mb-1 [&_strong]:font-bold [&_em]:italic [&_p]:mb-2 last:[&_p]:mb-0"
                             dangerouslySetInnerHTML={{ __html: markdownToHtml(editState.notes || '') || `<p class="text-[var(--color-text-tertiary)]">Nothing to preview.</p>` }} 
                         />
                     )}
@@ -336,7 +331,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         id="task-project"
                         value={editState.projectId || ''}
                         onChange={(e) => setEditState(s => ({...s, projectId: e.target.value || undefined}))}
-                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                         <option value="">No Project</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -350,7 +345,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         placeholder="Contact name..."
                         value={editState.contact || ''}
                         onChange={(e) => setEditState(s => ({...s, contact: e.target.value}))}
-                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)]"
+                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)]"
                     />
                 </div>
                  <div>
@@ -359,7 +354,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         id="task-importance"
                         value={editState.importance || Importance.MEDIUM}
                         onChange={(e) => setEditState(s => ({...s, importance: e.target.value as Importance}))}
-                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                         {Object.values(Importance).map(level => <option key={level} value={level}>{level}</option>)}
                     </select>
@@ -371,7 +366,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         type="datetime-local"
                         value={formatDateForInput(editState.dueDate)}
                         onChange={(e) => setEditState(s => ({...s, dueDate: e.target.value ? new Date(e.target.value).toISOString() : undefined}))}
-                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                 </div>
                  <div>
@@ -380,7 +375,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
                         id="task-recurrence"
                         value={editState.recurrenceRule?.frequency || 'never'}
                         onChange={(e) => handleRecurrenceChange(e.target.value as any)}
-                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-secondary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                         <option value="never">Never</option>
                         <option value="daily">Daily</option>
@@ -416,7 +411,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
             </a>
             <div className="flex items-center gap-2">
                 <button onClick={onClose} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-tertiary)] rounded-md disabled:opacity-50">Cancel</button>
-                <button onClick={handleSave} disabled={isThinking} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md w-32 flex justify-center items-center disabled:bg-indigo-800 disabled:cursor-not-allowed">
+                <button 
+                  onClick={handleSave} 
+                  disabled={isThinking} 
+                  style={{ backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))` }}
+                  className="px-4 py-2 text-sm font-semibold text-white rounded-md w-32 flex justify-center items-center disabled:bg-none disabled:bg-slate-600 disabled:cursor-not-allowed"
+                >
                     {isThinking ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : 'Save Changes'}
                 </button>
             </div>
@@ -426,4 +426,4 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags,
   );
 };
 
-  export default TaskDetailModal;
+export default TaskDetailModal;

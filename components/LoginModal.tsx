@@ -50,7 +50,8 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLogin, onClose }) => {
           </div>
           <button 
             type="submit"
-            className="w-full px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md flex justify-center items-center disabled:bg-indigo-800"
+            style={{ backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))` }}
+            className="w-full px-4 py-2 text-sm font-semibold text-white rounded-md flex justify-center items-center disabled:bg-none disabled:bg-slate-600"
           >
             Login
           </button>

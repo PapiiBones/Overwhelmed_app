@@ -1,5 +1,5 @@
-import { User } from '../types';
-import { AppState } from '../hooks/useAppReducer';
+// Fix: Import AppState from types.ts
+import { User, AppState } from '../types';
 
 const SESSION_KEY = 'ai-planner-currentUser';
 
@@ -19,7 +19,6 @@ const authService = {
     return userJson ? JSON.parse(userJson) : null;
   },
   
-  // Fix: Corrected Omit type from 'undoState' to 'toastState' to match the actual shape of the saved data.
   saveData: (email: string, state: Omit<AppState, 'toastState'>): void => {
     try {
       const dataKey = `ai-planner-data-${email}`;
@@ -41,7 +40,6 @@ const authService = {
     }
   },
 
-  // Fix: Add deleteData method to authService.
   deleteData: (email: string): void => {
     try {
       const dataKey = `ai-planner-data-${email}`;
@@ -52,4 +50,4 @@ const authService = {
   },
 };
 
-  export default authService;
+export default authService;

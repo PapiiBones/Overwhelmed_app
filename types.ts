@@ -55,9 +55,8 @@ export interface ToastState {
   message: string;
   onAction?: () => void;
   actionText?: string;
-  data?: any; // For undo state
+  data?: any; 
 }
-
 
 export interface AnalysisReport {
   summary: string;
@@ -80,15 +79,26 @@ export interface AppSettings {
     reminderTime: ReminderTime;
 }
 
+export interface SidebarItem {
+    id: string;
+    type: 'inbox' | 'today' | 'upcoming' | 'calendar' | 'project' | 'tag';
+    label: string;
+    icon?: React.ReactNode;
+    color?: string; // For projects and tags
+    isEditable: boolean;
+    isDeletable: boolean;
+}
+
+
 export interface AppState {
   tasks: Task[];
   projects: Project[];
   tags: Tag[];
+  sidebarItems: SidebarItem[];
   chatHistory: ChatMessage[];
   toastState: ToastState | null;
   settings: AppSettings;
 }
-
 
 export type ModalState =
   | { type: 'none' }

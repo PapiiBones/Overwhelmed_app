@@ -1,11 +1,6 @@
 import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
-import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule, Subtask, Tag } from '../types';
+import { Task, Importance, ChatMessage, Project, AnalysisReport, Tag } from '../types';
 
-/**
- * Safely parses a JSON string that might be wrapped in markdown backticks.
- * @param rawText The raw text response from the model.
- * @returns The parsed JSON object.
- */
 const safeParseJson = <T>(rawText: string): T => {
     const cleanedText = rawText.trim().replace(/^```json\s*/, '').replace(/```$/, '');
     try {
@@ -31,7 +26,7 @@ const getSmartTaskSchema = {
   properties: {
     content: {
       type: Type.STRING,
-      description: "The main content or description of the task. This should be the user's input, used verbatim, without any corrections or modifications.",
+      description: "The final, clean content of the task. If the user's input contains instructional phrases like 'remind me to...' or date/time info, this field should contain ONLY the core task description, with those phrases removed.",
     },
     contact: { type: Type.STRING, description: 'Any person or contact associated with the task.' },
     importance: { type: Type.STRING, enum: Object.values(Importance), description: 'The importance level of the task.' },
@@ -92,22 +87,17 @@ const analyzeTasksSchema = {
 };
 
 
-// Fix: Use Omit to prevent conflicting types for the 'subtasks' and 'tags' properties.
 const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `Analyze the following user input to extract structured task details. Today's date is ${new Date().toDateString()}.
-- The 'content' field MUST be the user's input, verbatim. Do not correct or alter it.
-- From the user's text, extract the 'dueDate' in ISO 8601 format. Be robust in parsing phrases like 'end of next week', 'in 3 days', 'every other Tuesday at 3pm', 'the 15th of every month'.
-- From the user's text, extract any 'recurrenceRule'. Provide clear examples:
+- **Content Cleaning**: The 'content' field is crucial. It must be the final, clean task description. If the user's input includes instructional phrases like 'remind me to...', 'add a task to...', or the date/time information itself, remove them from the final content. For example, if the input is "remind me to call the client tomorrow at 2pm #work", the content should be "Call the client".
+- **Date and Recurrence Parsing**: From the user's text, extract the 'dueDate' in ISO 8601 format and any 'recurrenceRule'. Be robust. Examples:
   - "every Monday" -> { frequency: 'weekly', interval: 1 }
-  - "daily" -> { frequency: 'daily', interval: 1 }
-  - "monthly" -> { frequency: 'monthly', interval: 1 }
   - "every 2 weeks" -> { frequency: 'weekly', interval: 2 }
-- If the input contains a list (e.g., lines starting with '-', '*', or numbers), extract them as an array of strings in the 'subtasks' field.
-- If the user's input contains hashtags (e.g., #work, #urgent), extract them as an array of strings in the 'tags' field. The tag should be the word without the '#' symbol.
+- **Subtasks & Tags**: If the input contains a list (e.g., lines with '-', '*', numbers), extract them as 'subtasks'. If it contains hashtags (e.g., #work), extract them as 'tags' (without the '#').
 - Also extract 'contact', 'importance', and 'isPriority' if mentioned.
 
 User Input: "${prompt}"`,
@@ -117,12 +107,9 @@ User Input: "${prompt}"`,
         },
     });
     
-    const result = safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
-    result.content = prompt;
-    return result;
+    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
 };
 
-// Fix: Use Omit to prevent conflicting types for the 'subtasks' and 'tags' properties.
 const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[], apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
     const ai = new GoogleGenAI({ apiKey });
@@ -133,11 +120,8 @@ const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Proj
 Return a JSON object containing ONLY the fields that should be updated.
 
 - **Date and Recurrence Parsing**: Analyze the new text for any date, time, or recurrence information. Be robust.
-  - Parse complex phrases like 'every other Friday', 'the last day of the month', or 'in 3 weeks' into a 'dueDate' (ISO 8601 format) and/or a 'recurrenceRule'.
-  - Recurrence Examples: "do laundry every Sunday" -> { "recurrenceRule": { "frequency": "weekly", "interval": 1 } }, "pay rent monthly" -> { "recurrenceRule": { "frequency": "monthly", "interval": 1 } }.
-- **Content Cleaning**: The 'content' field should be the final, clean task description. If instructional phrases like "remind me to..." were used, remove them. Otherwise, the new text itself is the new content.
-- **Subtasks**: If the new text contains a list, extract it into the 'subtasks' field as an array of strings. This should replace any existing subtasks.
-- **Tags**: If the new text contains hashtags (e.g., #research), extract them into the 'tags' field as an array of strings. This should replace any existing tags.
+- **Content Cleaning**: The 'content' field should be the final, clean task description, with instructional phrases removed.
+- **Subtasks & Tags**: If the new text contains a list or hashtags, extract them into the 'subtasks' or 'tags' fields, respectively. These should replace any existing ones.
 - **Other fields**: Update 'contact', 'importance', 'isPriority', or 'projectId' if mentioned.
 
 Available projects: [${projectList}]
@@ -152,7 +136,6 @@ New Task Content: "${prompt}"`,
 
     return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
 };
-
 
 const analyzeTasks = async (tasks: Task[], apiKey: string): Promise<AnalysisReport> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
@@ -200,7 +183,6 @@ const getFocusTask = async (tasks: Task[], apiKey: string): Promise<string | nul
     const focusedId = response.text.trim();
     return activeTasks.some(t => t.id === focusedId) ? focusedId : activeTasks[0].id;
 };
-
 
 const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], tags: Tag[], apiKey: string): Promise<string> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");

@@ -17,13 +17,9 @@ interface TaskItemProps {
 
 const stripMarkdown = (text?: string): string => {
     if (!text) return '';
-    // Remove links, keeping the text
     let stripped = text.replace(/\[(.*?)\]\(.*?\)/g, '$1');
-    // Remove formatting characters
     stripped = stripped.replace(/[*_~`#]/g, '');
-    // Collapse whitespace
     stripped = stripped.replace(/\s+/g, ' ').trim();
-    // Limit length for tooltip
     if (stripped.length > 100) {
         return stripped.substring(0, 100) + '...';
     }
@@ -38,9 +34,8 @@ const getContrastingTextColor = (hexcolor: string) => {
     const g = parseInt(hexcolor.substr(2, 2), 16);
     const b = parseInt(hexcolor.substr(4, 2), 16);
     const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#FFFFFF';
+    return (yiq >= 128) ? 'var(--color-text-primary)' : 'var(--color-bg-gradient-start)';
 };
-
 
 const TaskItem: React.FC<TaskItemProps> = ({ task, projects, tags, onSelectTask, onDeleteTask, onComplete, onUpdateTask, isFocused }) => {
   const project = projects.find(p => p.id === task.projectId);
@@ -97,7 +92,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, projects, tags, onSelectTask,
         }`}
         aria-label={task.completed ? 'Mark task as incomplete' : 'Mark task as complete'}
       >
-        {task.completed && <CheckIcon className="w-4 h-4 text-[var(--color-bg-gradient-mid)]" />}
+        {task.completed && <CheckIcon className="w-4 h-4 text-white" />}
       </button>
 
       <div className="flex-grow pr-28">

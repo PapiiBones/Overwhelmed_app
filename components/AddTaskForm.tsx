@@ -105,8 +105,8 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ onAddTask, isBusy, settings, 
         <button
           type="button"
           onClick={handleMicClick}
-          disabled={isBusy || isTranscribing}
-          className={`absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full transition-colors ${
+          disabled={isBusy || isTranscribing || !settings.aiEnabled}
+          className={`absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
             isRecording ? 'bg-red-500/20 text-red-400' : 'hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-tertiary)]'
           }`}
           aria-label={isRecording ? "Stop recording" : "Start recording"}
@@ -122,7 +122,10 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ onAddTask, isBusy, settings, 
       </div>
       <button
         type="submit"
-        className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 disabled:bg-[var(--color-surface-tertiary)] disabled:from-transparent disabled:to-transparent disabled:text-[var(--color-text-tertiary)] disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-full transition-all duration-300 transform hover:scale-105"
+        style={{ 
+            backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))`,
+        }}
+        className="flex items-center gap-2 disabled:bg-none disabled:bg-[var(--color-surface-tertiary)] disabled:text-[var(--color-text-tertiary)] disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-full transition-all duration-300 transform hover:scale-105"
         disabled={!inputValue.trim() || isDisabled}
       >
         <PlusIcon className="w-5 h-5" />
