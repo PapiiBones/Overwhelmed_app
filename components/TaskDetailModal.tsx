@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Task, Project, Importance, RecurrenceRule, Subtask, AppSettings } from '../types';
+import { Task, Project, Importance, RecurrenceRule, Subtask, AppSettings, Tag, ToastState } from '../types';
 import { geminiService } from '../services/geminiService';
 import { CloseIcon, CalendarIcon, PlusIcon, TrashIcon } from './Icons';
 
 interface TaskDetailModalProps {
   task: Task;
   projects: Project[];
+  tags: Tag[];
   onClose: () => void;
-  onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
+  onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>, aiUpdate?: { subtasks?: string[]; tags?: string[] }) => void;
+  onAddTag: (name: string) => Tag;
   settings: AppSettings;
+  dispatch: React.Dispatch<{ type: 'SET_TOAST_STATE', payload: ToastState | null }>;
 }
 
 const SMART_UPDATE_KEYWORDS = [
@@ -21,9 +24,10 @@ const SMART_UPDATE_KEYWORDS = [
   'by', 'at', 'on', 'due', 'in', 'for',
   'critical', 'high', 'medium', 'low', 'urgent', 'important',
   'call', 'email', 'meet', 'text', 'remind',
-  'project', 'move to', 'every day', 'daily', 'weekly', 'monthly'
+  'project', 'move to', 'every day', 'daily', 'weekly', 'monthly',
+  '#'
 ];
-const smartUpdateRegex = new RegExp(`\\b(${SMART_UPDATE_KEYWORDS.join('|')})\\b`, 'i');
+const smartUpdateRegex = new RegExp(`(${SMART_UPDATE_KEYWORDS.join('|')})`, 'i');
 
 const shouldAttemptSmartUpdate = (text: string): boolean => {
   return smartUpdateRegex.test(text);
@@ -60,26 +64,43 @@ const stripMarkdown = (text: string): string => {
     return stripped;
 };
 
-const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClose, onUpdateTask, settings }) => {
+const getContrastingTextColor = (hexcolor: string) => {
+    if (hexcolor.startsWith('#')) {
+        hexcolor = hexcolor.slice(1);
+    }
+    const r = parseInt(hexcolor.substr(0, 2), 16);
+    const g = parseInt(hexcolor.substr(2, 2), 16);
+    const b = parseInt(hexcolor.substr(4, 2), 16);
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '#000000' : '#FFFFFF';
+};
+
+const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, tags, onClose, onUpdateTask, onAddTag, settings, dispatch }) => {
   const [editState, setEditState] = useState<Partial<Task>>(task);
   const [isThinking, setIsThinking] = useState(false);
   const [notesView, setNotesView] = useState<'write' | 'preview'>('write');
   const [newSubtask, setNewSubtask] = useState('');
+  const [tagInput, setTagInput] = useState('');
   const contentInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setEditState({ ...task, subtasks: task.subtasks ? [...task.subtasks.map(st => ({...st}))] : [] });
+    setEditState({ 
+        ...task, 
+        subtasks: task.subtasks ? [...task.subtasks.map(st => ({...st}))] : [],
+        tagIds: task.tagIds ? [...task.tagIds] : []
+    });
     setTimeout(() => contentInputRef.current?.focus(), 100);
   }, [task]);
   
   const handleSave = async () => {
     const contentHasChanged = editState.content?.trim() !== task.content.trim() && editState.content?.trim();
     
+    // Fix: Correctly handle subtask type for getChangedFields.
     const getChangedFields = (currentState: Partial<Task>): Partial<Omit<Task, 'id' | 'timestamp'>> => {
       const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
       (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
         if (key !== 'id' && key !== 'timestamp') {
-          if (key === 'recurrenceRule' || key === 'subtasks') {
+          if (key === 'recurrenceRule' || key === 'subtasks' || key === 'tagIds') {
             if (JSON.stringify(currentState[key]) !== JSON.stringify(task[key])) {
                (changes as any)[key] = currentState[key];
             }
@@ -94,35 +115,28 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
       return changes;
     };
 
-    let changesToSave: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
-
     if (settings.aiEnabled && settings.apiKey && contentHasChanged && editState.content && shouldAttemptSmartUpdate(editState.content)) {
       setIsThinking(true);
       try {
-        const aiUpdatedFields = await geminiService.getSmartUpdate(editState.content, task, projects, settings.apiKey);
-        const { subtasks: aiSubtasks, ...restOfAiFields } = aiUpdatedFields;
+        // Fix: Destructure the API response to handle string[] for subtasks.
+        const { subtasks: aiSubtasks, tags: aiTags, ...restOfAiFields } = await geminiService.getSmartUpdate(editState.content, task, projects, settings.apiKey);
+        
+        // This conversion logic will be handled in the App component.
         const allChanges: Partial<Task> = { ...editState, ...restOfAiFields };
-
-        if (Array.isArray(aiSubtasks)) {
-          allChanges.subtasks = aiSubtasks.map((content): Subtask => ({
-            id: crypto.randomUUID(),
-            content,
-            completed: false,
-          }));
-        }
-        changesToSave = getChangedFields(allChanges);
+        const changesToSave = getChangedFields(allChanges);
+        onUpdateTask(task.id, changesToSave, { subtasks: aiSubtasks, tags: aiTags });
       } catch (error) {
         console.error("Smart Update failed, saving manual changes.", error);
-        changesToSave = getChangedFields(editState);
+        dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI update failed. Check API key. Manual changes were saved.' } });
+        onUpdateTask(task.id, getChangedFields(editState));
       } finally {
         setIsThinking(false);
       }
     } else {
-      changesToSave = getChangedFields(editState);
-    }
-
-    if (Object.keys(changesToSave).length > 0) {
-      onUpdateTask(task.id, changesToSave);
+      const changesToSave = getChangedFields(editState);
+      if (Object.keys(changesToSave).length > 0) {
+        onUpdateTask(task.id, changesToSave);
+      }
     }
     
     onClose();
@@ -162,6 +176,24 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
 
   const handleSubtaskDelete = (id: string) => {
     setEditState(s => ({ ...s, subtasks: s.subtasks?.filter(st => st.id !== id) }));
+  };
+
+  const handleAddTag = (tagName: string) => {
+    if (!tagName.trim()) return;
+    const existingTag = tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+    if (existingTag) {
+        if (!editState.tagIds?.includes(existingTag.id)) {
+            setEditState(s => ({ ...s, tagIds: [...(s.tagIds || []), existingTag.id] }));
+        }
+    } else {
+        const newTag = onAddTag(tagName);
+        setEditState(s => ({ ...s, tagIds: [...(s.tagIds || []), newTag.id] }));
+    }
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (tagId: string) => {
+    setEditState(s => ({ ...s, tagIds: s.tagIds?.filter(id => id !== tagId)}));
   };
 
   const generateGoogleCalendarLink = useCallback(() => {
@@ -207,6 +239,36 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
                     className="w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                 />
             </div>
+             <div>
+                <label htmlFor="task-tags" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Tags</label>
+                <div className="flex flex-wrap items-center gap-2 p-2 bg-[var(--color-surface-tertiary)] rounded-md">
+                    {editState.tagIds?.map(tagId => {
+                        const tag = tags.find(t => t.id === tagId);
+                        if (!tag) return null;
+                        return (
+                            <span key={tag.id} className="flex items-center gap-1.5 text-sm px-2 py-1 rounded-full" style={{ backgroundColor: tag.color, color: getContrastingTextColor(tag.color) }}>
+                                {tag.name}
+                                <button onClick={() => handleRemoveTag(tag.id)} className="opacity-70 hover:opacity-100">
+                                    <CloseIcon className="w-3 h-3"/>
+                                </button>
+                            </span>
+                        )
+                    })}
+                    <input 
+                        type="text"
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                                e.preventDefault();
+                                handleAddTag(tagInput);
+                            }
+                        }}
+                        placeholder="Add tag..."
+                        className="flex-grow bg-transparent outline-none text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)]"
+                    />
+                </div>
+             </div>
              <div>
                 <label htmlFor="task-subtasks" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Subtasks</label>
                 <div className="space-y-2">

@@ -11,6 +11,12 @@ export interface Project {
   color: string;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface RecurrenceRule {
   frequency: 'daily' | 'weekly' | 'monthly';
   interval: number;
@@ -36,6 +42,7 @@ export interface Task {
   isPriority?: boolean;
   recurrenceRule?: RecurrenceRule;
   subtasks?: Subtask[];
+  tagIds?: string[];
 }
 
 export interface ChatMessage {
@@ -43,10 +50,14 @@ export interface ChatMessage {
   parts: { text: string }[];
 }
 
-export interface UndoState {
-  task: Task;
-  index: number;
+export interface ToastState {
+  type: 'undo' | 'error' | 'info';
+  message: string;
+  onAction?: () => void;
+  actionText?: string;
+  data?: any; // For undo state
 }
+
 
 export interface AnalysisReport {
   summary: string;
@@ -72,8 +83,9 @@ export interface AppSettings {
 export interface AppState {
   tasks: Task[];
   projects: Project[];
+  tags: Tag[];
   chatHistory: ChatMessage[];
-  undoState: UndoState | null;
+  toastState: ToastState | null;
   settings: AppSettings;
 }
 

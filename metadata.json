@@ -1,5 +1,7 @@
 {
   "name": "Copy of Overwhelmed",
   "description": "A smart planner designed to help you regain control when you're feeling overwhelmed. It uses AI to organize tasks, provide focus, and bring clarity to your day.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

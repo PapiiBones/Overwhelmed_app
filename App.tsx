@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings } from './types';
+import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings, Tag, ToastState } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
@@ -19,11 +19,11 @@ import { useAIActions } from './hooks/useAIActions';
 import { sortTasks } from './utils/sorting';
 import { calculateNextDueDate } from './utils/date';
 
-type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
+type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar' | 'tag', projectId?: string, tagId?: string };
 
 const App: React.FC = () => {
   const { state, dispatch } = useAppReducer();
-  const { tasks, projects, chatHistory, undoState, settings } = state;
+  const { tasks, projects, tags, chatHistory, toastState, settings } = state;
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<View>({ type: 'inbox' });
@@ -58,7 +58,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (currentUser) {
-      const { undoState, ...savableState } = state;
+      const { toastState, ...savableState } = state;
       authService.saveData(currentUser.email, savableState);
     }
   }, [state, currentUser]);
@@ -95,7 +95,7 @@ const App: React.FC = () => {
   };
 
   const handleExportData = () => {
-    const { undoState, ...exportableState } = state;
+    const { toastState, ...exportableState } = state;
     const dataStr = JSON.stringify(exportableState, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
     const exportFileDefaultName = 'overwhelmed_backup.json';
@@ -190,8 +190,51 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [settings.aiEnabled]);
 
+  // --- Tag Management ---
+  const handleTagNames = useCallback((tagNames: string[]): string[] => {
+    const tagIds: string[] = [];
+    tagNames.forEach(name => {
+      const normalizedName = name.trim().toLowerCase();
+      if (!normalizedName) return;
+      const existingTag = tags.find(t => t.name.toLowerCase() === normalizedName);
+      if (existingTag) {
+        tagIds.push(existingTag.id);
+      } else {
+        const newTag: Tag = {
+          id: crypto.randomUUID(),
+          name: name.trim(),
+          color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length],
+        };
+        dispatch({ type: 'ADD_TAG', payload: newTag });
+        tagIds.push(newTag.id);
+      }
+    });
+    return tagIds;
+  }, [tags, dispatch]);
+
+  const addTag = useCallback((name: string) => {
+      const newTag: Tag = {
+          id: crypto.randomUUID(),
+          name: name.trim(),
+          color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length]
+      };
+      dispatch({ type: 'ADD_TAG', payload: newTag });
+      return newTag;
+  }, [dispatch, tags.length]);
+
+  const deleteTag = useCallback((id: string) => {
+      dispatch({ type: 'DELETE_TAG', payload: id });
+      if (currentView.type === 'tag' && currentView.tagId === id) {
+          setCurrentView({ type: 'inbox' });
+      }
+  }, [dispatch, currentView]);
+
+  const updateTag = useCallback((tag: Tag) => {
+      dispatch({ type: 'UPDATE_TAG', payload: tag });
+  }, [dispatch]);
+
   // --- CRUD Operations ---
-  const addTask = useCallback((rawContent: string) => {
+  const addTask = useCallback(async (rawContent: string) => {
     const provisionalId = crypto.randomUUID();
     let provisionalTask: Task = {
       id: provisionalId,
@@ -203,37 +246,63 @@ const App: React.FC = () => {
       isPriority: false,
       projectId: currentView.type === 'project' ? currentView.projectId : undefined,
       subtasks: [],
+      tagIds: [],
     };
     
     if (settings.aiEnabled && settings.apiKey) {
         provisionalTask.isProcessing = true;
         dispatch({ type: 'ADD_TASK', payload: provisionalTask });
-        geminiService.getSmartTask(rawContent, settings.apiKey)
-          .then(smartTask => {
-              const subtasks: Subtask[] | undefined = smartTask.subtasks?.map(content => ({
-                  id: crypto.randomUUID(),
-                  content,
-                  completed: false
-              }));
-              dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, subtasks, isProcessing: false } } });
-          })
-          .catch(error => {
+        try {
+            const { subtasks: aiSubtasks, tags: aiTags, ...smartTask } = await geminiService.getSmartTask(rawContent, settings.apiKey);
+            
+            const subtasks: Subtask[] | undefined = aiSubtasks?.map(content => ({
+                id: crypto.randomUUID(),
+                content,
+                completed: false
+            }));
+
+            const tagIds = aiTags ? handleTagNames(aiTags) : [];
+
+            dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, subtasks, tagIds, isProcessing: false } } });
+        } catch(error) {
             console.error("Failed to smart-add task", error);
             dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { isProcessing: false } } });
-          });
+            dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI enhancement failed. Please check your API key in Settings.' } });
+        }
     } else {
         dispatch({ type: 'ADD_TASK', payload: provisionalTask });
     }
-  }, [dispatch, currentView, settings]);
+  }, [dispatch, currentView, settings, handleTagNames]);
 
-  const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => {
-    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedFields } });
+  const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>, aiUpdate?: { subtasks?: string[]; tags?: string[] }) => {
+    let finalUpdates = { ...updatedFields };
+    if (aiUpdate?.subtasks) {
+        finalUpdates.subtasks = aiUpdate.subtasks.map(content => ({
+            id: crypto.randomUUID(),
+            content,
+            completed: false
+        }));
+    }
+    if (aiUpdate?.tags) {
+        finalUpdates.tagIds = handleTagNames(aiUpdate.tags);
+    }
+    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedFields: finalUpdates } });
+  }, [dispatch, handleTagNames]);
+  
+  const handleUndoDelete = useCallback(() => {
+    dispatch({ type: 'RESTORE_UNDO_STATE' });
+    dispatch({ type: 'SET_TOAST_STATE', payload: null });
   }, [dispatch]);
 
   const deleteTask = useCallback((id: string) => {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (!taskToDelete) return;
+    const taskIndex = tasks.indexOf(taskToDelete);
     dispatch({ type: 'DELETE_TASK', payload: id });
-    setTimeout(() => dispatch({ type: 'SET_UNDO_STATE', payload: null }), 5000);
-  }, [dispatch]);
+    // Fix: Add explicit type `ToastState` to prevent TypeScript from widening the `type` property to `string`.
+    const toastData: ToastState = { type: 'undo', message: 'Task deleted', actionText: 'Undo', onAction: handleUndoDelete, data: { task: taskToDelete, index: taskIndex }};
+    dispatch({ type: 'SET_TOAST_STATE', payload: toastData });
+  }, [dispatch, tasks, handleUndoDelete]);
 
   const handleCompleteTask = useCallback((id: string, completed: boolean) => {
     if (completed) {
@@ -255,10 +324,6 @@ const App: React.FC = () => {
     updateTask(id, { completed });
   }, [tasks, updateTask]);
   
-  const handleUndoDelete = useCallback(() => {
-    dispatch({ type: 'RESTORE_UNDO_STATE' });
-  }, [dispatch]);
-
   const addProject = useCallback((name: string) => {
     const newProject: Project = { id: crypto.randomUUID(), name, color: PROJECT_COLORS[projects.length % PROJECT_COLORS.length] };
     dispatch({ type: 'ADD_PROJECT', payload: newProject });
@@ -271,19 +336,31 @@ const App: React.FC = () => {
 
   // --- AI Actions ---
   const handleSendMessage = async (newMessage: string) => {
-    if (!settings.aiEnabled || !settings.apiKey) return;
     const userMessage: ChatMessage = { role: 'user', parts: [{ text: newMessage }] };
-    const newHistory = [...chatHistory, userMessage];
-    dispatch({ type: 'SET_CHAT_HISTORY', payload: newHistory });
+    const historyWithUserMessage = [...chatHistory, userMessage];
+    dispatch({ type: 'SET_CHAT_HISTORY', payload: historyWithUserMessage });
+
+    if (!settings.aiEnabled) {
+      const modelMessage: ChatMessage = { role: 'model', parts: [{ text: "AI features are disabled. You can enable them in the Settings panel." }] };
+      dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, modelMessage] });
+      return;
+    }
+
+    if (!settings.apiKey) {
+      const modelMessage: ChatMessage = { role: 'model', parts: [{ text: "Please add your Google AI API key in the Settings panel to use the chatbot." }] };
+      dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, modelMessage] });
+      return;
+    }
+
     setIsChatLoading(true);
     try {
-        const responseText = await geminiService.getChatResponse(chatHistory, newMessage, tasks, projects, settings.apiKey);
+        const responseText = await geminiService.getChatResponse(chatHistory, newMessage, tasks, projects, tags, settings.apiKey);
         const modelMessage: ChatMessage = { role: 'model', parts: [{ text: responseText }] };
-        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...newHistory, modelMessage] });
+        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, modelMessage] });
     } catch(error) {
         console.error("Chatbot error:", error);
         const errorMessage: ChatMessage = { role: 'model', parts: [{ text: "Sorry, I'm having trouble responding right now. Please check your API key in Settings." }] };
-        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...newHistory, errorMessage] });
+        dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, errorMessage] });
     } finally {
         setIsChatLoading(false);
     }
@@ -306,6 +383,7 @@ const App: React.FC = () => {
         case 'today': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) >= today && new Date(t.dueDate) <= endOfToday); break;
         case 'upcoming': filtered = tasks.filter(t => t.dueDate && new Date(t.dueDate) > endOfToday && new Date(t.dueDate) <= upcomingEndDate); break;
         case 'project': filtered = tasks.filter(t => t.projectId === currentView.projectId); break;
+        case 'tag': filtered = tasks.filter(t => t.tagIds?.includes(currentView.tagId || '')); break;
     }
     if (currentView.type !== 'calendar' && filterBy !== 'all') {
         filtered = filtered.filter(task => task.importance === filterBy);
@@ -314,22 +392,28 @@ const App: React.FC = () => {
         const lowercasedTerm = searchTerm.toLowerCase();
         filtered = filtered.filter(task => {
             const project = projects.find(p => p.id === task.projectId);
+            const taskTags = task.tagIds?.map(id => tags.find(t => t.id === id)?.name).filter(Boolean) || [];
             return (
                 task.content.toLowerCase().includes(lowercasedTerm) ||
                 (task.notes && task.notes.toLowerCase().includes(lowercasedTerm)) ||
                 (task.contact && task.contact.toLowerCase().includes(lowercasedTerm)) ||
-                (project && project.name.toLowerCase().includes(lowercasedTerm))
+                (project && project.name.toLowerCase().includes(lowercasedTerm)) ||
+                taskTags.some(tagName => tagName.toLowerCase().includes(lowercasedTerm))
             );
         });
     }
     return sortTasks(filtered, sortBy);
-  }, [tasks, projects, currentView, filterBy, sortBy, searchTerm]);
+  }, [tasks, projects, tags, currentView, filterBy, sortBy, searchTerm]);
 
   const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
   const isAddingTask = useMemo(() => tasks.some(t => t.isProcessing), [tasks]);
   
   const viewTitles: {[key: string]: string} = { inbox: 'Inbox', today: 'Today', upcoming: 'Upcoming' };
-  const currentTitle = currentView.type === 'project' ? projects.find(p => p.id === currentView.projectId)?.name || 'Project' : viewTitles[currentView.type] || 'Planner';
+  const currentTitle = useMemo(() => {
+    if (currentView.type === 'project') return projects.find(p => p.id === currentView.projectId)?.name || 'Project';
+    if (currentView.type === 'tag') return `#${tags.find(t => t.id === currentView.tagId)?.name}` || '#Tag';
+    return viewTitles[currentView.type] || 'Planner';
+  }, [currentView, projects, tags]);
 
   return (
     <div className={`h-screen flex font-sans transition-all duration-500 ${focusTaskId ? 'pt-16' : 'pt-0'}`}>
@@ -340,8 +424,10 @@ const App: React.FC = () => {
         </div>
       )}
       <Sidebar 
-        projects={projects} currentView={currentView} onSelectView={setCurrentView}
-        onAddProject={addProject} onDeleteProject={deleteProject} currentUser={currentUser}
+        projects={projects} tags={tags} currentView={currentView} onSelectView={setCurrentView}
+        onAddProject={addProject} onDeleteProject={deleteProject} 
+        onAddTag={(name) => addTag(name)} onDeleteTag={deleteTag} onUpdateTag={updateTag}
+        currentUser={currentUser}
         onLoginClick={() => setModal({ type: 'login' })} onLogoutClick={handleLogout}
         onSettingsClick={() => setModal({ type: 'settings' })}
       />
@@ -366,9 +452,9 @@ const App: React.FC = () => {
             </header>
             
             <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} aiEnabled={settings.aiEnabled} /></div>}
+                {currentView.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} settings={settings} dispatch={dispatch} /></div>}
                 {currentView.type === 'calendar' ? (
-                    <CalendarView tasks={tasks} projects={projects} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onUpdateTask={updateTask} />
+                    <CalendarView tasks={tasks} projects={projects} tags={tags} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onUpdateTask={updateTask} />
                 ) : (
                   <>
                     <div className="flex flex-wrap items-center gap-4 mb-6">
@@ -389,14 +475,14 @@ const App: React.FC = () => {
                       {displayedTasks.length > 0 ? (
                         displayedTasks.map(task => (
                           <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
-                              <TaskItem task={task} projects={projects} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
+                              <TaskItem task={task} projects={projects} tags={tags} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
                           </div>
                         ))
                       ) : (
-                        (tasks.length === 0 && !currentUser) ? (
+                        (tasks.length === 0) ? (
                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
                                 <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">Welcome! Get started by adding a task.</h2>
-                                <p className="text-[var(--color-text-tertiary)] mt-2">Try typing 'Call Zoe tomorrow at 5' to see the AI in action.</p>
+                                <p className="text-[var(--color-text-tertiary)] mt-2">Try typing 'Call Zoe tomorrow at 5 #work' to see the AI in action.</p>
                             </div>
                         ) : (
                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
@@ -416,7 +502,7 @@ const App: React.FC = () => {
           messages={chatHistory} onSendMessage={handleSendMessage} isLoading={isChatLoading} />
       }
       {modal.type === 'task-detail' && (
-        <TaskDetailModal task={modal.task} projects={projects} onClose={() => setModal({ type: 'none' })} onUpdateTask={updateTask} settings={settings} />
+        <TaskDetailModal task={modal.task} projects={projects} tags={tags} onClose={() => setModal({ type: 'none' })} onUpdateTask={updateTask} onAddTag={addTag} settings={settings} dispatch={dispatch} />
       )}
       {modal.type === 'ai-analysis' && (
         <AIAnalysisModal isLoading={isAnalyzing} report={modal.report} onClose={() => setModal({ type: 'none' })} />
@@ -434,7 +520,7 @@ const App: React.FC = () => {
           onClose={() => setModal({ type: 'none' })}
         />
       )}
-      <Toast message="Task deleted" isVisible={!!undoState} onAction={handleUndoDelete} actionText="Undo" />
+      <Toast toastState={toastState} onClose={() => dispatch({ type: 'SET_TOAST_STATE', payload: null })} />
     </div>
   );
 };

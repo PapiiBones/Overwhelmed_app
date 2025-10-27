@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
-import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule, Subtask } from '../types';
+import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule, Subtask, Tag } from '../types';
 
 /**
  * Safely parses a JSON string that might be wrapped in markdown backticks.
@@ -45,6 +45,11 @@ const getSmartTaskSchema = {
         type: Type.ARRAY,
         description: "A list of subtasks extracted from the user's input, like from a bulleted list.",
         items: { type: Type.STRING }
+    },
+    tags: {
+        type: Type.ARRAY,
+        description: "A list of tags extracted from hashtags in the user's input, without the '#'.",
+        items: { type: Type.STRING }
     }
   },
   required: ['content', 'importance'],
@@ -64,6 +69,11 @@ const getSmartUpdateSchema = {
             type: Type.ARRAY,
             description: "A new list of subtasks if the user added them.",
             items: { type: Type.STRING }
+        },
+        tags: {
+            type: Type.ARRAY,
+            description: "A new list of tags extracted from hashtags in the user's input, without the '#'. This should replace existing tags.",
+            items: { type: Type.STRING }
         }
     },
 };
@@ -82,8 +92,8 @@ const analyzeTasksSchema = {
 };
 
 
-// Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
-const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+// Fix: Use Omit to prevent conflicting types for the 'subtasks' and 'tags' properties.
+const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
@@ -97,6 +107,7 @@ const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partia
   - "monthly" -> { frequency: 'monthly', interval: 1 }
   - "every 2 weeks" -> { frequency: 'weekly', interval: 2 }
 - If the input contains a list (e.g., lines starting with '-', '*', or numbers), extract them as an array of strings in the 'subtasks' field.
+- If the user's input contains hashtags (e.g., #work, #urgent), extract them as an array of strings in the 'tags' field. The tag should be the word without the '#' symbol.
 - Also extract 'contact', 'importance', and 'isPriority' if mentioned.
 
 User Input: "${prompt}"`,
@@ -106,13 +117,13 @@ User Input: "${prompt}"`,
         },
     });
     
-    const result = safeParseJson<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }>(response.text);
+    const result = safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
     result.content = prompt;
     return result;
 };
 
-// Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
-const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[], apiKey: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+// Fix: Use Omit to prevent conflicting types for the 'subtasks' and 'tags' properties.
+const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[], apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
     const ai = new GoogleGenAI({ apiKey });
     const projectList = projects.map(p => `"${p.name}" (ID: ${p.id})`).join(', ');
@@ -126,6 +137,7 @@ Return a JSON object containing ONLY the fields that should be updated.
   - Recurrence Examples: "do laundry every Sunday" -> { "recurrenceRule": { "frequency": "weekly", "interval": 1 } }, "pay rent monthly" -> { "recurrenceRule": { "frequency": "monthly", "interval": 1 } }.
 - **Content Cleaning**: The 'content' field should be the final, clean task description. If instructional phrases like "remind me to..." were used, remove them. Otherwise, the new text itself is the new content.
 - **Subtasks**: If the new text contains a list, extract it into the 'subtasks' field as an array of strings. This should replace any existing subtasks.
+- **Tags**: If the new text contains hashtags (e.g., #research), extract them into the 'tags' field as an array of strings. This should replace any existing tags.
 - **Other fields**: Update 'contact', 'importance', 'isPriority', or 'projectId' if mentioned.
 
 Available projects: [${projectList}]
@@ -138,7 +150,7 @@ New Task Content: "${prompt}"`,
         },
     });
 
-    return safeParseJson<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }>(response.text);
+    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
 };
 
 
@@ -190,7 +202,7 @@ const getFocusTask = async (tasks: Task[], apiKey: string): Promise<string | nul
 };
 
 
-const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], apiKey: string): Promise<string> => {
+const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], tags: Tag[], apiKey: string): Promise<string> => {
     if (!apiKey) throw new Error("API Key is required for AI features.");
     const ai = new GoogleGenAI({ apiKey });
 
@@ -202,7 +214,11 @@ const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks
         ? `Here are the user's projects:\n${projects.map(p => `- ${p.name} (ID: ${p.id})`).join('\n')}`
         : "The user has not created any projects yet.";
 
-    const systemInstruction = `You are a helpful AI assistant for the "Overwhelmed" planner app. You have access to the user's current tasks and projects. Your role is to answer questions about their tasks, provide encouragement, and help them organize their day. Be concise, friendly, and supportive. Today's date is ${new Date().toDateString()}.\n\n${taskContext}\n\n${projectContext}`;
+    const tagContext = tags.length > 0
+        ? `Here are the user's tags:\n${tags.map(t => `- ${t.name} (ID: ${t.id})`).join('\n')}`
+        : "The user has not created any tags yet.";
+
+    const systemInstruction = `You are a helpful AI assistant for the "Overwhelmed" planner app. You have access to the user's current tasks, projects, and tags. Your role is to answer questions about their tasks, provide encouragement, and help them organize their day. Be concise, friendly, and supportive. Today's date is ${new Date().toDateString()}.\n\n${taskContext}\n\n${projectContext}\n\n${tagContext}`;
     
     const fullHistory: GeminiChatMessage[] = [
       ...history.map(m => ({
@@ -221,10 +237,34 @@ const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks
     return response.text;
 };
 
+const transcribeAudio = async (audioBase64: string, apiKey: string): Promise<string> => {
+    if (!apiKey) throw new Error("API Key is required for audio transcription.");
+    const ai = new GoogleGenAI({ apiKey });
+
+    const audioPart = {
+      inlineData: {
+        mimeType: 'audio/webm',
+        data: audioBase64,
+      },
+    };
+
+    const textPart = {
+      text: "Transcribe this audio recording of a user stating a task they want to add to their planner.",
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts: [textPart, audioPart] },
+    });
+
+    return response.text.trim();
+  };
+
 export const geminiService = {
   getSmartTask,
   analyzeTasks,
   getChatResponse,
   getSmartUpdate,
   getFocusTask,
+  transcribeAudio,
 };

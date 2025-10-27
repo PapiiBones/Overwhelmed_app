@@ -1,11 +1,12 @@
 import { useReducer } from 'react';
-import { Task, Project, ChatMessage, UndoState, AppSettings } from '../types';
+import { Task, Project, ChatMessage, ToastState, AppSettings, Tag } from '../types';
 
 export interface AppState {
   tasks: Task[];
   projects: Project[];
+  tags: Tag[];
   chatHistory: ChatMessage[];
-  undoState: UndoState | null;
+  toastState: ToastState | null;
   settings: AppSettings;
 }
 
@@ -17,8 +18,11 @@ type Action =
   | { type: 'DELETE_TASK'; payload: string }
   | { type: 'ADD_PROJECT'; payload: Project }
   | { type: 'DELETE_PROJECT'; payload: string }
+  | { type: 'ADD_TAG'; payload: Tag }
+  | { type: 'UPDATE_TAG'; payload: Tag }
+  | { type: 'DELETE_TAG'; payload: string }
   | { type: 'SET_CHAT_HISTORY'; payload: ChatMessage[] }
-  | { type: 'SET_UNDO_STATE'; payload: UndoState | null }
+  | { type: 'SET_TOAST_STATE'; payload: ToastState | null }
   | { type: 'RESTORE_UNDO_STATE' }
   | { type: 'UPDATE_SETTINGS', payload: Partial<AppSettings> };
 
@@ -33,8 +37,12 @@ const appReducer = (state: AppState, action: Action): AppState => {
     case 'RESET_STATE':
         return initialState;
     case 'ADD_TASK':
-      const taskWithSubtasks = { ...action.payload, subtasks: action.payload.subtasks || [] };
-      return { ...state, tasks: [taskWithSubtasks, ...state.tasks] };
+      const taskWithDefaults = { 
+        ...action.payload, 
+        subtasks: action.payload.subtasks || [],
+        tagIds: action.payload.tagIds || [] 
+      };
+      return { ...state, tasks: [...state.tasks, taskWithDefaults] };
     case 'UPDATE_TASK':
       return {
         ...state,
@@ -43,13 +51,9 @@ const appReducer = (state: AppState, action: Action): AppState => {
         ),
       };
     case 'DELETE_TASK': {
-      const taskIndex = state.tasks.findIndex(t => t.id === action.payload);
-      if (taskIndex === -1) return state;
-      const taskToDelete = state.tasks[taskIndex];
       return {
         ...state,
         tasks: state.tasks.filter(task => task.id !== action.payload),
-        undoState: { task: taskToDelete, index: taskIndex },
       };
     }
     case 'ADD_PROJECT':
@@ -60,15 +64,29 @@ const appReducer = (state: AppState, action: Action): AppState => {
         tasks: state.tasks.map(t => (t.projectId === action.payload ? { ...t, projectId: undefined } : t)),
         projects: state.projects.filter(p => p.id !== action.payload),
       };
+    case 'ADD_TAG':
+        return { ...state, tags: [...state.tags, action.payload] };
+    case 'UPDATE_TAG':
+        return { ...state, tags: state.tags.map(t => t.id === action.payload.id ? action.payload : t) };
+    case 'DELETE_TAG':
+        return {
+            ...state,
+            tasks: state.tasks.map(task => ({
+                ...task,
+                tagIds: task.tagIds?.filter(id => id !== action.payload)
+            })),
+            tags: state.tags.filter(t => t.id !== action.payload),
+        };
     case 'SET_CHAT_HISTORY':
       return { ...state, chatHistory: action.payload };
-    case 'SET_UNDO_STATE':
-        return { ...state, undoState: action.payload };
+    case 'SET_TOAST_STATE':
+        return { ...state, toastState: action.payload };
     case 'RESTORE_UNDO_STATE': {
-      if (!state.undoState) return state;
+      if (!state.toastState || state.toastState.type !== 'undo' || !state.toastState.data) return state;
+      const { task, index } = state.toastState.data;
       const newTasks = [...state.tasks];
-      newTasks.splice(state.undoState.index, 0, state.undoState.task);
-      return { ...state, tasks: newTasks, undoState: null };
+      newTasks.splice(index, 0, task);
+      return { ...state, tasks: newTasks, toastState: null };
     }
     case 'UPDATE_SETTINGS':
         return {
@@ -83,8 +101,9 @@ const appReducer = (state: AppState, action: Action): AppState => {
 const initialState: AppState = {
   tasks: [],
   projects: [],
+  tags: [],
   chatHistory: [],
-  undoState: null,
+  toastState: null,
   settings: {
     theme: 'system',
     aiEnabled: true,

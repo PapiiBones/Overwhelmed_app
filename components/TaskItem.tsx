@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Task, Project } from '../types';
+import { Task, Project, Tag } from '../types';
 import { IMPORTANCE_STYLES } from '../constants';
 import { TrashIcon, CalendarIcon, CheckIcon, PencilIcon, ListIcon, ChatBubbleIcon, StarIcon } from './Icons';
 import QuickNoteEditor from './QuickNoteEditor';
@@ -7,6 +7,7 @@ import QuickNoteEditor from './QuickNoteEditor';
 interface TaskItemProps {
   task: Task;
   projects: Project[];
+  tags: Tag[];
   onSelectTask: (task: Task) => void;
   onDeleteTask: (id:string) => void;
   onComplete: (id: string, completed: boolean) => void;
@@ -29,8 +30,19 @@ const stripMarkdown = (text?: string): string => {
     return stripped;
 };
 
+const getContrastingTextColor = (hexcolor: string) => {
+    if (hexcolor.startsWith('#')) {
+        hexcolor = hexcolor.slice(1);
+    }
+    const r = parseInt(hexcolor.substr(0, 2), 16);
+    const g = parseInt(hexcolor.substr(2, 2), 16);
+    const b = parseInt(hexcolor.substr(4, 2), 16);
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '#000000' : '#FFFFFF';
+};
 
-const TaskItem: React.FC<TaskItemProps> = ({ task, projects, onSelectTask, onDeleteTask, onComplete, onUpdateTask, isFocused }) => {
+
+const TaskItem: React.FC<TaskItemProps> = ({ task, projects, tags, onSelectTask, onDeleteTask, onComplete, onUpdateTask, isFocused }) => {
   const project = projects.find(p => p.id === task.projectId);
   const styles = IMPORTANCE_STYLES[task.importance];
   const isOverdue = !task.completed && task.dueDate && new Date(task.dueDate) < new Date();
@@ -100,27 +112,44 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, projects, onSelectTask, onDel
               onCancel={() => setIsEditingNotes(false)}
             />
         ) : (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-sm text-[var(--color-text-secondary)]">
-                {project && <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: project.color}}></div> {project.name}</span>}
-                {task.contact && <span className="bg-[var(--color-surface-tertiary)] px-2 py-0.5 rounded-full">{task.contact}</span>}
-                {task.dueDate && (
-                    <span className={`flex items-center gap-1.5 ${isOverdue ? 'text-red-400 font-semibold' : ''}`}>
-                        <CalendarIcon className="w-4 h-4" />
-                        {new Date(task.dueDate).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit', hour12: true })}
-                    </span>
-                )}
-                {task.notes && (
-                    <span className="flex items-center gap-1.5" title={stripMarkdown(task.notes)}>
-                        <ListIcon className="w-4 h-4" />
-                    </span>
-                )}
-                {totalSubtasks > 0 && (
-                  <span className="flex items-center gap-1.5 bg-[var(--color-surface-tertiary)] px-2 py-0.5 rounded-full" title={`${completedSubtasks} of ${totalSubtasks} subtasks complete`}>
-                    <CheckIcon className="w-3 h-3"/>
-                    <span>{completedSubtasks}/{totalSubtasks}</span>
-                  </span>
-                )}
-            </div>
+            <>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-sm text-[var(--color-text-secondary)]">
+                    {project && <span className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: project.color}}></div> {project.name}</span>}
+                    {task.contact && <span className="bg-[var(--color-surface-tertiary)] px-2 py-0.5 rounded-full">{task.contact}</span>}
+                    {task.dueDate && (
+                        <span className={`flex items-center gap-1.5 ${isOverdue ? 'text-red-400 font-semibold' : ''}`}>
+                            <CalendarIcon className="w-4 h-4" />
+                            {new Date(task.dueDate).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit', hour12: true })}
+                        </span>
+                    )}
+                    {task.notes && (
+                        <span className="flex items-center gap-1.5" title={stripMarkdown(task.notes)}>
+                            <ListIcon className="w-4 h-4" />
+                        </span>
+                    )}
+                    {totalSubtasks > 0 && (
+                      <span className="flex items-center gap-1.5 bg-[var(--color-surface-tertiary)] px-2 py-0.5 rounded-full" title={`${completedSubtasks} of ${totalSubtasks} complete`}>
+                        <CheckIcon className="w-3 h-3"/>
+                        <span>{completedSubtasks}/{totalSubtasks}</span>
+                      </span>
+                    )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    {task.tagIds?.map(tagId => {
+                        const tag = tags.find(t => t.id === tagId);
+                        if (!tag) return null;
+                        return (
+                            <span 
+                                key={tag.id} 
+                                className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: tag.color, color: getContrastingTextColor(tag.color) }}
+                            >
+                                {tag.name}
+                            </span>
+                        );
+                    })}
+                </div>
+            </>
         )}
 
       </div>

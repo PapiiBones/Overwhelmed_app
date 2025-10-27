@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { Project, User } from '../types';
-import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon } from './Icons';
+import { Project, User, Tag } from '../types';
+import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon, PencilIcon, CheckIcon } from './Icons';
 
-type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
+type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar' | 'tag', projectId?: string, tagId?: string };
 
 interface SidebarProps {
   projects: Project[];
+  tags: Tag[];
   currentView: View;
   onSelectView: (view: View) => void;
   onAddProject: (name: string) => void;
   onDeleteProject: (id: string) => void;
+  onAddTag: (name: string) => void;
+  onDeleteTag: (id: string) => void;
+  onUpdateTag: (tag: Tag) => void;
   currentUser: User | null;
   onLoginClick: () => void;
   onLogoutClick: () => void;
@@ -22,10 +26,11 @@ interface NavItemProps {
   isActive: boolean;
   onClick: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
   color?: string;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDelete, color }) => (
+const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDelete, onEdit, color }) => (
     <div
         className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
             isActive ? 'bg-[var(--color-nav-item-active-bg)] text-[var(--color-nav-item-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)]'
@@ -36,22 +41,36 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDel
             {color ? <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: color}} /> : icon}
             <span className="font-medium">{label}</span>
         </div>
-        {onDelete && (
-            <button
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="p-1 text-[var(--color-text-tertiary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-[var(--color-nav-item-hover-bg)]"
-                aria-label={`Delete project ${label}`}
-            >
-                <TrashIcon className="w-4 h-4" />
-            </button>
-        )}
+        { (onDelete || onEdit) &&
+            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {onEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-1 text-[var(--color-text-tertiary)] hover:text-indigo-400 rounded-full hover:bg-[var(--color-nav-item-hover-bg)]">
+                        <PencilIcon className="w-4 h-4" />
+                    </button>
+                )}
+                {onDelete && (
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1 text-[var(--color-text-tertiary)] hover:text-red-400 rounded-full hover:bg-[var(--color-nav-item-hover-bg)]" aria-label={`Delete ${label}`}>
+                        <TrashIcon className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
+        }
     </div>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, onAddProject, onDeleteProject, currentUser, onLoginClick, onLogoutClick, onSettingsClick }) => {
+const Sidebar: React.FC<SidebarProps> = ({ 
+    projects, tags, currentView, onSelectView, 
+    onAddProject, onDeleteProject, 
+    onAddTag, onDeleteTag, onUpdateTag,
+    currentUser, onLoginClick, onLogoutClick, onSettingsClick 
+}) => {
   const [newProjectName, setNewProjectName] = useState('');
   const [isAddingProject, setIsAddingProject] = useState(false);
-
+  const [newTagName, setNewTagName] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [editingTagName, setEditingTagName] = useState('');
+  
   const handleAddProject = (e: React.FormEvent) => {
     e.preventDefault();
     if (newProjectName.trim()) {
@@ -60,6 +79,28 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
         setIsAddingProject(false);
     }
   };
+
+  const handleAddTag = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newTagName.trim()) {
+        onAddTag(newTagName.trim());
+        setNewTagName('');
+        setIsAddingTag(false);
+    }
+  };
+  
+  const handleEditTag = (tag: Tag) => {
+      setEditingTagId(tag.id);
+      setEditingTagName(tag.name);
+  }
+
+  const handleSaveTag = (tag: Tag) => {
+      if (editingTagName.trim() && editingTagName.trim() !== tag.name) {
+          onUpdateTag({ ...tag, name: editingTagName.trim() });
+      }
+      setEditingTagId(null);
+      setEditingTagName('');
+  }
 
   return (
     <aside className="hidden md:flex w-72 bg-[var(--color-sidebar-bg)] backdrop-blur-md p-4 flex-col border-r border-[var(--color-sidebar-border)] h-full">
@@ -134,6 +175,59 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
                 >
                     <PlusIcon className="w-5 h-5" />
                     <span className="font-medium">Add Project</span>
+                </button>
+            )}
+        </div>
+        
+        <div className="pt-6 pb-2">
+            <h2 className="px-3 text-sm font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">Tags</h2>
+        </div>
+        {tags.map(tag => (
+            editingTagId === tag.id ? (
+                <div key={tag.id} className="flex items-center gap-2 px-3 py-1.5">
+                    <input
+                        type="text"
+                        value={editingTagName}
+                        onChange={(e) => setEditingTagName(e.target.value)}
+                        autoFocus
+                        onBlur={() => handleSaveTag(tag)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveTag(tag)}
+                        className="w-full bg-[var(--color-surface-secondary)] text-[var(--color-text-primary)] px-2 py-1 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button onClick={() => handleSaveTag(tag)} className="p-1.5 hover:bg-[var(--color-nav-item-hover-bg)] rounded-md"><CheckIcon className="w-4 h-4 text-green-400"/></button>
+                </div>
+            ) : (
+                <NavItem 
+                    key={tag.id}
+                    color={tag.color}
+                    label={tag.name}
+                    isActive={currentView.type === 'tag' && currentView.tagId === tag.id}
+                    onClick={() => onSelectView({ type: 'tag', tagId: tag.id })}
+                    onEdit={() => handleEditTag(tag)}
+                    onDelete={() => onDeleteTag(tag.id)}
+                />
+            )
+        ))}
+         <div className="pt-2">
+            {isAddingTag ? (
+                <form onSubmit={handleAddTag}>
+                    <input
+                        type="text"
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="New tag name..."
+                        autoFocus
+                        onBlur={() => { if(!newTagName) setIsAddingTag(false); }}
+                        className="w-full bg-[var(--color-surface-secondary)] text-[var(--color-text-primary)] px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                </form>
+            ) : (
+                <button 
+                    onClick={() => setIsAddingTag(true)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                    <PlusIcon className="w-5 h-5" />
+                    <span className="font-medium">Add Tag</span>
                 </button>
             )}
         </div>

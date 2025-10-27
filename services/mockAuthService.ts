@@ -19,7 +19,8 @@ const authService = {
     return userJson ? JSON.parse(userJson) : null;
   },
   
-  saveData: (email: string, state: Omit<AppState, 'undoState'>): void => {
+  // Fix: Corrected Omit type from 'undoState' to 'toastState' to match the actual shape of the saved data.
+  saveData: (email: string, state: Omit<AppState, 'toastState'>): void => {
     try {
       const dataKey = `ai-planner-data-${email}`;
       const dataToSave = JSON.stringify(state);

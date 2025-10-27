@@ -1,5 +1,5 @@
 import React from 'react';
-import { Task, Project } from '../types';
+import { Task, Project, Tag } from '../types';
 import TaskItem from './TaskItem';
 import { CloseIcon } from './Icons';
 import { sortTasks } from '../utils/sorting';
@@ -8,6 +8,7 @@ interface DayDetailModalProps {
   date: Date;
   tasks: Task[];
   projects: Project[];
+  tags: Tag[];
   onClose: () => void;
   onDeleteTask: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
@@ -15,7 +16,7 @@ interface DayDetailModalProps {
   onUpdateTask: (id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
 }
 
-const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, onClose, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
+const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, tags, onClose, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
   const formattedDate = date.toLocaleDateString(undefined, {
     weekday: 'long',
     year: 'numeric',
@@ -44,10 +45,12 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
         <main className="flex-grow p-4 overflow-y-auto space-y-4">
           {sortedTasks.length > 0 ? (
             sortedTasks.map(task => (
+              // Fix: Pass the 'tags' prop to TaskItem.
               <TaskItem
                 key={task.id}
                 task={task}
                 projects={projects}
+                tags={tags}
                 onSelectTask={onSelectTask}
                 onDeleteTask={onDeleteTask}
                 onComplete={onComplete}
