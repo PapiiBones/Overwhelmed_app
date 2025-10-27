@@ -27,7 +27,7 @@ const Toast: React.FC<ToastProps> = ({ message, isVisible, onAction, actionText 
     <div
       role="status"
       aria-live="assertive"
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white py-3 px-6 rounded-full shadow-lg border border-slate-700 flex items-center gap-4 z-50 transition-all duration-300 ${isVisible ? 'animate-slide-in-up' : 'opacity-0 translate-y-4'}`}
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-[var(--color-surface-primary)] text-[var(--color-text-primary)] py-3 px-6 rounded-full shadow-lg border border-[var(--color-border-secondary)] flex items-center gap-4 z-50 transition-all duration-300 ${isVisible ? 'animate-slide-in-up' : 'opacity-0 translate-y-4'}`}
     >
       <p>{message}</p>
       {onAction && actionText && (
@@ -43,4 +43,4 @@ const Toast: React.FC<ToastProps> = ({ message, isVisible, onAction, actionText 
   );
 };
 
-export default Toast;
+ export default Toast;

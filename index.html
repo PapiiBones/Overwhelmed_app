@@ -10,15 +10,59 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --color-bg-gradient-start: #1e293b;
+        --color-bg-gradient-mid: #0f172a;
+        --color-bg-gradient-end: #1e3a8a;
+        --color-text-primary: #f1f5f9; /* slate-100 */
+        --color-text-secondary: #94a3b8; /* slate-400 */
+        --color-text-tertiary: #64748b; /* slate-500 */
+        --color-text-accent: #a5b4fc; /* indigo-300 */
+        --color-sidebar-bg: rgba(15, 23, 42, 0.7); /* slate-900/70 */
+        --color-sidebar-border: #1e293b; /* slate-800 */
+        --color-nav-item-active-bg: rgba(99, 102, 241, 0.2); /* indigo-500/20 */
+        --color-nav-item-active-text: #c7d2fe; /* indigo-200 */
+        --color-nav-item-hover-bg: rgba(51, 65, 85, 0.5); /* slate-700/50 */
+        --color-surface-primary: rgba(51, 65, 85, 0.3); /* slate-800/30 */
+        --color-surface-secondary: rgba(51, 65, 85, 0.5); /* slate-800/50 */
+        --color-surface-tertiary: #334155; /* slate-700 */
+        --color-border-primary: rgba(51, 65, 85, 0.5); /* slate-700/50 */
+        --color-border-secondary: #334155; /* slate-700 */
+        --color-border-tertiary: #475569; /* slate-600 */
+      }
+
+      .light {
+        --color-bg-gradient-start: #f1f5f9;
+        --color-bg-gradient-mid: #e2e8f0;
+        --color-bg-gradient-end: #dbeafe;
+        --color-text-primary: #1e293b; /* slate-800 */
+        --color-text-secondary: #475569; /* slate-600 */
+        --color-text-tertiary: #94a3b8; /* slate-400 */
+        --color-text-accent: #4f46e5; /* indigo-600 */
+        --color-sidebar-bg: rgba(248, 250, 252, 0.7); /* slate-50/70 */
+        --color-sidebar-border: #e2e8f0; /* slate-200 */
+        --color-nav-item-active-bg: rgba(99, 102, 241, 0.1); /* indigo-500/10 */
+        --color-nav-item-active-text: #4338ca; /* indigo-700 */
+        --color-nav-item-hover-bg: rgba(226, 232, 240, 0.5); /* slate-200/50 */
+        --color-surface-primary: rgba(241, 245, 249, 1); /* slate-100 */
+        --color-surface-secondary: rgba(226, 232, 240, 1); /* slate-200 */
+        --color-surface-tertiary: #cbd5e1; /* slate-300 */
+        --color-border-primary: rgba(203, 213, 225, 0.5); /* slate-300/50 */
+        --color-border-secondary: #cbd5e1; /* slate-300 */
+        --color-border-tertiary: #94a3b8; /* slate-400 */
+      }
+
       body {
         font-family: 'Inter', sans-serif;
-        background: radial-gradient(ellipse at top, #1e293b, #0f172a), radial-gradient(ellipse at bottom, #1e3a8a, #0f172a);
+        background: radial-gradient(ellipse at top, var(--color-bg-gradient-start), var(--color-bg-gradient-mid)), radial-gradient(ellipse at bottom, var(--color-bg-gradient-end), var(--color-bg-gradient-mid));
         background-attachment: fixed;
-        overflow-y: hidden; /* Prevent body scroll with new layout */
+        overflow-y: hidden;
+        color: var(--color-text-primary);
       }
+
       .font-sans { font-family: 'Inter', sans-serif; }
       ::-webkit-scrollbar { width: 8px; }
-      ::-webkit-scrollbar-track { background: #1e293b; }
+      ::-webkit-scrollbar-track { background: var(--color-sidebar-border); }
       ::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 4px; }
       ::-webkit-scrollbar-thumb:hover { background: #6366f1; }
       
@@ -34,7 +78,6 @@
       }
       .animate-slide-in-up { animation: slideInUp 0.3s ease-out forwards; }
       
-      /* For accessibility, to hide labels visually but keep them for screen readers */
       .sr-only {
         position: absolute;
         width: 1px;
@@ -60,7 +103,7 @@
 }
 </script>
   </head>
-  <body class="bg-slate-900 text-slate-100">
+  <body>
     <div id="root"></div>
     <audio id="complete-sound" src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU3LjU2LjEwMAAAAAAAAAAAAAAA//tAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWW6dxZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuOTkuNVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV-"></audio>
     <script type="module" src="/index.tsx"></script>

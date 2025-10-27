@@ -53,10 +53,35 @@ export interface AnalysisReport {
   priorities: string[];
 }
 
+export interface User {
+  email: string;
+}
+
 export type SortBy = 'timestamp' | 'importance' | 'dueDate';
+
+export type Theme = 'light' | 'dark' | 'system';
+export type ReminderTime = 5 | 10 | 15 | 30 | 60;
+
+export interface AppSettings {
+    theme: Theme;
+    aiEnabled: boolean;
+    apiKey: string;
+    reminderTime: ReminderTime;
+}
+
+export interface AppState {
+  tasks: Task[];
+  projects: Project[];
+  chatHistory: ChatMessage[];
+  undoState: UndoState | null;
+  settings: AppSettings;
+}
+
 
 export type ModalState =
   | { type: 'none' }
   | { type: 'task-detail'; task: Task }
   | { type: 'ai-analysis'; report: AnalysisReport | null }
-  | { type: 'chatbot' };
+  | { type: 'chatbot' }
+  | { type: 'login' }
+  | { type: 'settings' };

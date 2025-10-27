@@ -27,4 +27,4 @@ export const sortTasks = (tasks: Task[], sortBy: SortBy): Task[] => {
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     }
   });
-};
+  };

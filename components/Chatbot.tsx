@@ -51,33 +51,33 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-slate-800/80 backdrop-blur-md rounded-xl shadow-2xl flex flex-col z-50 animate-slide-in-up border border-slate-700">
-          <header className="flex justify-between items-center p-4 border-b border-slate-700 bg-gradient-to-r from-indigo-500/20 to-purple-600/20">
-            <h3 className="font-bold text-lg text-slate-100">AI Assistant</h3>
+        <div className="fixed bottom-24 right-6 w-[90vw] max-w-md h-[70vh] max-h-[600px] bg-[var(--color-sidebar-bg)] backdrop-blur-md rounded-xl shadow-2xl flex flex-col z-50 animate-slide-in-up border border-[var(--color-sidebar-border)]">
+          <header className="flex justify-between items-center p-4 border-b border-[var(--color-sidebar-border)] bg-gradient-to-r from-indigo-500/20 to-purple-600/20">
+            <h3 className="font-bold text-lg text-[var(--color-text-primary)]">AI Assistant</h3>
           </header>
           <div className="flex-grow p-4 overflow-y-auto">
             <div className="flex flex-col gap-4">
-              {messages.length === 0 && <div className="text-center text-slate-400 text-sm">Ask me anything about your tasks, like "What's my most important task for work?"</div>}
+              {messages.length === 0 && <div className="text-center text-[var(--color-text-secondary)] text-sm">Ask me anything about your tasks, like "What's my most important task for work?"</div>}
               {messages.map((msg, index) => (
                 <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)]'}`}>
                     <p className="text-base whitespace-pre-wrap">{msg.parts[0].text}</p>
                   </div>
                 </div>
               ))}
               {isLoading && (
                 <div className="flex justify-start">
-                  <div className="max-w-[80%] p-3 rounded-lg bg-slate-700 text-slate-200 flex items-center gap-2">
-                     <div className="w-2 h-2 bg-slate-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                     <div className="w-2 h-2 bg-slate-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                     <div className="w-2 h-2 bg-slate-400 rounded-full animate-pulse"></div>
+                  <div className="max-w-[80%] p-3 rounded-lg bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] flex items-center gap-2">
+                     <div className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                     <div className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                     <div className="w-2 h-2 bg-[var(--color-text-secondary)] rounded-full animate-pulse"></div>
                   </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
           </div>
-          <div className="p-4 border-t border-slate-700">
+          <div className="p-4 border-t border-[var(--color-sidebar-border)]">
             <div className="flex items-center gap-2">
               <input
                 ref={inputRef}
@@ -86,7 +86,7 @@ const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onToggle, messages, onSendMes
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                className="w-full bg-[var(--color-surface-tertiary)] border border-[var(--color-border-secondary)] rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-[var(--color-text-primary)]"
                 disabled={isLoading}
               />
               <button onClick={handleSend} disabled={isLoading || !input.trim()} className="bg-indigo-600 text-white p-3 rounded-full hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed transition-colors">

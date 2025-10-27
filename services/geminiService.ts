@@ -1,12 +1,6 @@
 import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
 import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule, Subtask } from '../types';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY is not set in environment variables.");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 /**
  * Safely parses a JSON string that might be wrapped in markdown backticks.
  * @param rawText The raw text response from the model.
@@ -89,7 +83,9 @@ const analyzeTasksSchema = {
 
 
 // Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
-const getSmartTask = async (prompt: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+    if (!apiKey) throw new Error("API Key is required for AI features.");
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `Analyze the following user input to extract structured task details. Today's date is ${new Date().toDateString()}.
@@ -111,13 +107,14 @@ User Input: "${prompt}"`,
     });
     
     const result = safeParseJson<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }>(response.text);
-    // Always use the user's original input for the task content to ensure it's not accidentally modified by the AI.
     result.content = prompt;
     return result;
 };
 
 // Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
-const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[]): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[], apiKey: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
+    if (!apiKey) throw new Error("API Key is required for AI features.");
+    const ai = new GoogleGenAI({ apiKey });
     const projectList = projects.map(p => `"${p.name}" (ID: ${p.id})`).join(', ');
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -145,7 +142,9 @@ New Task Content: "${prompt}"`,
 };
 
 
-const analyzeTasks = async (tasks: Task[]): Promise<AnalysisReport> => {
+const analyzeTasks = async (tasks: Task[], apiKey: string): Promise<AnalysisReport> => {
+    if (!apiKey) throw new Error("API Key is required for AI features.");
+    const ai = new GoogleGenAI({ apiKey });
     const activeTasks = tasks.filter(task => !task.completed);
     
     if (activeTasks.length === 0) {
@@ -171,7 +170,9 @@ const analyzeTasks = async (tasks: Task[]): Promise<AnalysisReport> => {
     return safeParseJson<AnalysisReport>(response.text);
 };
 
-const getFocusTask = async (tasks: Task[]): Promise<string | null> => {
+const getFocusTask = async (tasks: Task[], apiKey: string): Promise<string | null> => {
+    if (!apiKey) throw new Error("API Key is required for AI features.");
+    const ai = new GoogleGenAI({ apiKey });
     const activeTasks = tasks.filter(task => !task.completed);
     if (activeTasks.length < 2) {
         return activeTasks[0]?.id || null;
@@ -189,7 +190,10 @@ const getFocusTask = async (tasks: Task[]): Promise<string | null> => {
 };
 
 
-const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[]): Promise<string> => {
+const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], apiKey: string): Promise<string> => {
+    if (!apiKey) throw new Error("API Key is required for AI features.");
+    const ai = new GoogleGenAI({ apiKey });
+
     const taskContext = tasks.length > 0
         ? `Here is the user's current list of tasks:\n${tasks.map(t => `- [${t.completed ? 'X' : ' '}] ${t.content} (ID: ${t.id}, Importance: ${t.importance}, Project: ${projects.find(p=>p.id === t.projectId)?.name || 'Inbox'})`).join('\n')}`
         : "The user currently has no tasks.";

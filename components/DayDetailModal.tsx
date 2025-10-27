@@ -31,13 +31,13 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
       onClick={onClose}
     >
       <div 
-        className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-700 relative overflow-hidden"
+        className="bg-[var(--color-surface-primary)] rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-[var(--color-border-secondary)] relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-600"></div>
-        <header className="flex justify-between items-center p-4 border-b border-slate-700 flex-shrink-0">
-          <h2 className="text-xl font-bold text-slate-100">{formattedDate}</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full" aria-label="Close day detail">
+        <header className="flex justify-between items-center p-4 border-b border-[var(--color-border-secondary)] flex-shrink-0">
+          <h2 className="text-xl font-bold text-[var(--color-text-primary)]">{formattedDate}</h2>
+          <button onClick={onClose} className="p-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-tertiary)] rounded-full" aria-label="Close day detail">
             <CloseIcon className="w-6 h-6" />
           </button>
         </header>
@@ -57,8 +57,8 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
             ))
           ) : (
             <div className="text-center py-16 px-4">
-                <h3 className="text-2xl font-semibold text-slate-300">No Tasks Scheduled</h3>
-                <p className="text-slate-400 mt-2">There are no tasks due on this day.</p>
+                <h3 className="text-2xl font-semibold text-[var(--color-text-primary)]">No Tasks Scheduled</h3>
+                <p className="text-[var(--color-text-secondary)] mt-2">There are no tasks due on this day.</p>
             </div>
           )}
         </main>
@@ -67,4 +67,4 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
   );
 };
 
-export default DayDetailModal;
+   export default DayDetailModal;

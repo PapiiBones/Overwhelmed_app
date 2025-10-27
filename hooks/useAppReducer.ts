@@ -1,15 +1,17 @@
-import { useReducer, useEffect } from 'react';
-import { Task, Project, ChatMessage, UndoState, Subtask } from '../types';
+import { useReducer } from 'react';
+import { Task, Project, ChatMessage, UndoState, AppSettings } from '../types';
 
-interface AppState {
+export interface AppState {
   tasks: Task[];
   projects: Project[];
   chatHistory: ChatMessage[];
   undoState: UndoState | null;
+  settings: AppSettings;
 }
 
 type Action =
-  | { type: 'SET_INITIAL_STATE'; payload: Partial<AppState> }
+  | { type: 'REPLACE_STATE'; payload: Partial<AppState> }
+  | { type: 'RESET_STATE' }
   | { type: 'ADD_TASK'; payload: Task }
   | { type: 'UPDATE_TASK'; payload: { id: string; updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>> } }
   | { type: 'DELETE_TASK'; payload: string }
@@ -17,12 +19,19 @@ type Action =
   | { type: 'DELETE_PROJECT'; payload: string }
   | { type: 'SET_CHAT_HISTORY'; payload: ChatMessage[] }
   | { type: 'SET_UNDO_STATE'; payload: UndoState | null }
-  | { type: 'RESTORE_UNDO_STATE' };
+  | { type: 'RESTORE_UNDO_STATE' }
+  | { type: 'UPDATE_SETTINGS', payload: Partial<AppSettings> };
 
 const appReducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
-    case 'SET_INITIAL_STATE':
-      return { ...state, ...action.payload };
+    case 'REPLACE_STATE':
+      return { 
+          ...initialState, 
+          ...action.payload, 
+          settings: { ...initialState.settings, ...action.payload.settings }
+      };
+    case 'RESET_STATE':
+        return initialState;
     case 'ADD_TASK':
       const taskWithSubtasks = { ...action.payload, subtasks: action.payload.subtasks || [] };
       return { ...state, tasks: [taskWithSubtasks, ...state.tasks] };
@@ -61,6 +70,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
       newTasks.splice(state.undoState.index, 0, state.undoState.task);
       return { ...state, tasks: newTasks, undoState: null };
     }
+    case 'UPDATE_SETTINGS':
+        return {
+            ...state,
+            settings: { ...state.settings, ...action.payload }
+        }
     default:
       return state;
   }
@@ -71,55 +85,15 @@ const initialState: AppState = {
   projects: [],
   chatHistory: [],
   undoState: null,
+  settings: {
+    theme: 'system',
+    aiEnabled: true,
+    apiKey: '',
+    reminderTime: 10,
+  }
 };
 
 export const useAppReducer = () => {
   const [state, dispatch] = useReducer(appReducer, initialState);
-
-  // Load state from localStorage on initial render
-  useEffect(() => {
-    try {
-      const storedTasks = localStorage.getItem('ai-planner-tasks-v2');
-      const storedProjects = localStorage.getItem('ai-planner-projects-v2');
-      const storedHistory = localStorage.getItem('ai-planner-chat-history-v1');
-      
-      const payload: Partial<AppState> = {};
-      if (storedTasks) payload.tasks = JSON.parse(storedTasks);
-      if (storedProjects) payload.projects = JSON.parse(storedProjects);
-      if (storedHistory) payload.chatHistory = JSON.parse(storedHistory);
-      
-      dispatch({ type: 'SET_INITIAL_STATE', payload });
-    } catch (error) {
-      console.error("Failed to load data from localStorage", error);
-    }
-  }, []);
-
-  // Persist state to localStorage whenever it changes
-  useEffect(() => {
-    try {
-      // Filter out transient processing tasks before saving
-      const tasksToSave = state.tasks.filter(t => !t.isProcessing);
-      localStorage.setItem('ai-planner-tasks-v2', JSON.stringify(tasksToSave));
-    } catch (error) {
-      console.error("Failed to save tasks", error);
-    }
-  }, [state.tasks]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ai-planner-projects-v2', JSON.stringify(state.projects));
-    } catch (error) {
-      console.error("Failed to save projects", error);
-    }
-  }, [state.projects]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ai-planner-chat-history-v1', JSON.stringify(state.chatHistory));
-    } catch (error) {
-      console.error("Failed to save chat history", error);
-    }
-  }, [state.chatHistory]);
-
   return { state, dispatch };
-};
+   };

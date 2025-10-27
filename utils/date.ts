@@ -17,4 +17,4 @@ export const calculateNextDueDate = (currentDueDate: string, rule: RecurrenceRul
       break;
   }
   return date.toISOString();
-};
+ };

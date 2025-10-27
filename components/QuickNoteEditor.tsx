@@ -34,7 +34,7 @@ const QuickNoteEditor: React.FC<QuickNoteEditorProps> = ({ task, onSave, onCance
         onChange={(e) => setNoteInput(e.target.value)}
         onBlur={handleSaveNote}
         onKeyDown={handleKeyDown}
-        className="w-full bg-slate-900/50 text-slate-200 p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm placeholder:text-slate-500 resize-y"
+        className="w-full bg-[var(--color-surface-secondary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm placeholder:text-[var(--color-text-tertiary)] resize-y"
         autoFocus
         placeholder="Add a quick note... (Ctrl+Enter to save)"
       />
@@ -42,4 +42,4 @@ const QuickNoteEditor: React.FC<QuickNoteEditorProps> = ({ task, onSave, onCance
   );
 };
 
-export default QuickNoteEditor;
+  export default QuickNoteEditor;

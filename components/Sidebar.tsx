@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Project } from '../types';
-import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon } from './Icons';
+import { Project, User } from '../types';
+import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon } from './Icons';
 
 type View = { type: 'inbox' | 'today' | 'upcoming' | 'project' | 'calendar', projectId?: string };
 
@@ -10,6 +10,10 @@ interface SidebarProps {
   onSelectView: (view: View) => void;
   onAddProject: (name: string) => void;
   onDeleteProject: (id: string) => void;
+  currentUser: User | null;
+  onLoginClick: () => void;
+  onLogoutClick: () => void;
+  onSettingsClick: () => void;
 }
 
 interface NavItemProps {
@@ -24,7 +28,7 @@ interface NavItemProps {
 const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDelete, color }) => (
     <div
         className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
-            isActive ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+            isActive ? 'bg-[var(--color-nav-item-active-bg)] text-[var(--color-nav-item-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)]'
         }`}
         onClick={onClick}
     >
@@ -35,7 +39,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDel
         {onDelete && (
             <button
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-slate-600"
+                className="p-1 text-[var(--color-text-tertiary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-[var(--color-nav-item-hover-bg)]"
                 aria-label={`Delete project ${label}`}
             >
                 <TrashIcon className="w-4 h-4" />
@@ -44,7 +48,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, onDel
     </div>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, onAddProject, onDeleteProject }) => {
+const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, onAddProject, onDeleteProject, currentUser, onLoginClick, onLogoutClick, onSettingsClick }) => {
   const [newProjectName, setNewProjectName] = useState('');
   const [isAddingProject, setIsAddingProject] = useState(false);
 
@@ -58,21 +62,18 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
   };
 
   return (
-    <aside className="hidden md:flex w-72 bg-slate-900/70 backdrop-blur-md p-4 flex-col border-r border-slate-800 h-full">
+    <aside className="hidden md:flex w-72 bg-[var(--color-sidebar-bg)] backdrop-blur-md p-4 flex-col border-r border-[var(--color-sidebar-border)] h-full">
         <div className="flex items-center gap-2 mb-8 px-2">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12.6667 4H8C5.79086 4 4 5.79086 4 8V12.6667" stroke="url(#paint0_linear_1_2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M19.3333 4H24C26.2091 4 28 5.79086 28 8V12.6667" stroke="url(#paint1_linear_1_2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M12.6667 28H8C5.79086 28 4 26.2091 4 24V19.3333" stroke="url(#paint2_linear_1_2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M19.3333 28H24C26.2091 28 28 26.2091 28 24V19.3333" stroke="url(#paint3_linear_1_2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                 <defs>
-                    <linearGradient id="paint0_linear_1_2" x1="8.33333" y1="4" x2="8.33333" y2="12.6667" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#A855F7"/></linearGradient>
-                    <linearGradient id="paint1_linear_1_2" x1="23.6667" y1="4" x2="23.6667" y2="12.6667" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#A855F7"/></linearGradient>
-                    <linearGradient id="paint2_linear_1_2" x1="8.33333" y1="19.3333" x2="8.33333" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#A855F7"/></linearGradient>
-                    <linearGradient id="paint3_linear_1_2" x1="23.6667" y1="19.3333" x2="23.6667" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1"/><stop offset="1" stopColor="#A855F7"/></linearGradient>
+                    <linearGradient id="logoGradient" x1="4" y1="16" x2="28" y2="16" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#A855F7"/>
+                        <stop offset="1" stop-color="#6366F1"/>
+                    </linearGradient>
                 </defs>
+                <path d="M16 16C18.5 16 18.5 13.5 16 13.5C13.5 13.5 13.5 18.5 16 18.5C21 18.5 21 11.5 16 11.5C11 11.5 11 20.5 16 20.5C23 20.5 23 9.5 16 9.5C9 9.5 9 22.5 16 22.5L28 22.5" stroke="url(#logoGradient)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
             </svg>
-            <h1 className="text-2xl font-bold text-slate-100">Overwhelmed</h1>
+            <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Overwhelmed</h1>
         </div>
       <nav className="flex-grow space-y-1.5 overflow-y-auto pr-1 -mr-2">
         <NavItem 
@@ -101,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
         />
 
         <div className="pt-6 pb-2">
-            <h2 className="px-3 text-sm font-semibold text-slate-500 uppercase tracking-wider">Projects</h2>
+            <h2 className="px-3 text-sm font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">Projects</h2>
         </div>
         {projects.map(project => (
           <NavItem 
@@ -113,33 +114,57 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, currentView, onSelectView, 
             onDelete={() => onDeleteProject(project.id)}
           />
         ))}
-
+         <div className="pt-2">
+            {isAddingProject ? (
+                <form onSubmit={handleAddProject}>
+                    <input
+                        type="text"
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="New project name..."
+                        autoFocus
+                        onBlur={() => { if(!newProjectName) setIsAddingProject(false); }}
+                        className="w-full bg-[var(--color-surface-secondary)] text-[var(--color-text-primary)] px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                </form>
+            ) : (
+                <button 
+                    onClick={() => setIsAddingProject(true)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)] transition-colors"
+                >
+                    <PlusIcon className="w-5 h-5" />
+                    <span className="font-medium">Add Project</span>
+                </button>
+            )}
+        </div>
       </nav>
-      <div className="mt-4 pt-4 border-t border-slate-800">
-        {isAddingProject ? (
-            <form onSubmit={handleAddProject}>
-                <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="New project name..."
-                    autoFocus
-                    onBlur={() => { if(!newProjectName) setIsAddingProject(false); }}
-                    className="w-full bg-slate-700/50 text-slate-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-            </form>
+      <div className="mt-4 pt-4 border-t border-[var(--color-sidebar-border)]">
+        {currentUser ? (
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+                <p className="font-medium text-[var(--color-text-primary)]">Signed in as</p>
+                <p className="text-[var(--color-text-secondary)] truncate">{currentUser.email}</p>
+            </div>
+            <div className="flex items-center">
+                 <button onClick={onSettingsClick} className="p-2 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] rounded-full hover:bg-[var(--color-nav-item-hover-bg)] transition-colors" aria-label="Settings">
+                    <SettingsIcon className="w-5 h-5" />
+                 </button>
+                 <button onClick={onLogoutClick} className="ml-2 text-sm font-semibold text-indigo-400 hover:text-indigo-300">
+                    Logout
+                 </button>
+            </div>
+          </div>
         ) : (
-            <button 
-                onClick={() => setIsAddingProject(true)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 transition-colors"
-            >
-                <PlusIcon className="w-5 h-5" />
-                <span className="font-medium">Add Project</span>
-            </button>
+          <button
+            onClick={onLoginClick}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg transition-colors"
+          >
+            Login to Sync
+          </button>
         )}
       </div>
     </aside>
   );
 };
 
-export default Sidebar;
+  export default Sidebar;
