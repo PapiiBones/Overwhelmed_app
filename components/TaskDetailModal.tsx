@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Task, Project, Importance, RecurrenceRule } from '../types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Task, Project, Importance, RecurrenceRule, Subtask } from '../types';
 import { geminiService } from '../services/geminiService';
-import { CloseIcon, CalendarIcon } from './Icons';
+import { CloseIcon, CalendarIcon, PlusIcon, TrashIcon } from './Icons';
 
 interface TaskDetailModalProps {
   task: Task;
@@ -79,15 +79,22 @@ const markdownToHtml = (markdown: string): string => {
     return html;
 };
 
+const stripMarkdown = (text: string): string => {
+    if (!text) return '';
+    let stripped = text.replace(/\[(.*?)\]\(.*?\)/g, '$1'); // Links
+    stripped = stripped.replace(/[*_~`#]/g, ''); // Formatting
+    return stripped;
+};
 
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClose, onUpdateTask }) => {
   const [editState, setEditState] = useState<Partial<Task>>(task);
   const [isThinking, setIsThinking] = useState(false);
   const [notesView, setNotesView] = useState<'write' | 'preview'>('write');
+  const [newSubtask, setNewSubtask] = useState('');
   const contentInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setEditState(task);
+    setEditState({ ...task, subtasks: task.subtasks ? [...task.subtasks.map(st => ({...st}))] : [] });
     setTimeout(() => contentInputRef.current?.focus(), 100);
   }, [task]);
   
@@ -98,9 +105,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
       const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
       (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
         if (key !== 'id' && key !== 'timestamp') {
-          // Deep compare for recurrenceRule
-          if (key === 'recurrenceRule') {
-            if (JSON.stringify(currentState.recurrenceRule) !== JSON.stringify(task.recurrenceRule)) {
+          // Deep compare for object/array types
+          if (key === 'recurrenceRule' || key === 'subtasks') {
+            if (JSON.stringify(currentState[key]) !== JSON.stringify(task[key])) {
                (changes as any)[key] = currentState[key];
             }
           } else if (currentState[key] !== task[key]) {
@@ -121,7 +128,22 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
       setIsThinking(true);
       try {
         const aiUpdatedFields = await geminiService.getSmartUpdate(editState.content, task, projects);
-        const allChanges = { ...editState, ...aiUpdatedFields };
+        // FIX: Destructure to handle the `subtasks` property's type mismatch separately.
+        const { subtasks: aiSubtasks, ...restOfAiFields } = aiUpdatedFields;
+
+        // Create a base `allChanges` object that is a valid Partial<Task>.
+        const allChanges: Partial<Task> = { ...editState, ...restOfAiFields };
+
+        // If the AI provided subtasks (as a string array), convert them to Subtask objects.
+        // This overwrites any subtasks from `editState`.
+        if (Array.isArray(aiSubtasks)) {
+          allChanges.subtasks = aiSubtasks.map((content): Subtask => ({
+            id: crypto.randomUUID(),
+            content,
+            completed: false,
+          }));
+        }
+
         changesToSave = getChangedFields(allChanges);
       } catch (error) {
         console.error("Smart Update failed, saving manual changes.", error);
@@ -159,16 +181,36 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
     }
   };
 
-  const generateGoogleCalendarLink = () => {
+  const handleAddSubtask = () => {
+    if (newSubtask.trim() === '') return;
+    const subtask: Subtask = { id: crypto.randomUUID(), content: newSubtask, completed: false };
+    setEditState(s => ({ ...s, subtasks: [...(s.subtasks || []), subtask] }));
+    setNewSubtask('');
+  };
+
+  const handleSubtaskChange = (id: string, newContent: string) => {
+    setEditState(s => ({ ...s, subtasks: s.subtasks?.map(st => st.id === id ? { ...st, content: newContent } : st) }));
+  };
+
+  const handleSubtaskToggle = (id: string) => {
+    setEditState(s => ({ ...s, subtasks: s.subtasks?.map(st => st.id === id ? { ...st, completed: !st.completed } : st) }));
+  };
+
+  const handleSubtaskDelete = (id: string) => {
+    setEditState(s => ({ ...s, subtasks: s.subtasks?.filter(st => st.id !== id) }));
+  };
+
+  const generateGoogleCalendarLink = useCallback(() => {
     const baseUrl = 'https://www.google.com/calendar/render?action=TEMPLATE';
-    const title = encodeURIComponent(task.content);
-    const notes = encodeURIComponent(stripMarkdown(task.notes || ''));
+    const title = encodeURIComponent(editState.content || '');
+    const notes = encodeURIComponent(stripMarkdown(editState.notes || ''));
+    const dueDate = editState.dueDate;
     
-    if (!task.dueDate) {
+    if (!dueDate) {
         return `${baseUrl}&text=${title}&details=${notes}`;
     }
 
-    const startTime = new Date(task.dueDate);
+    const startTime = new Date(dueDate);
     const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // Assume 1 hour duration
 
     const formatGCDate = (date: Date) => date.toISOString().replace(/-|:|\.\d+/g, '');
@@ -176,13 +218,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
     const dates = `&dates=${formatGCDate(startTime)}/${formatGCDate(endTime)}`;
 
     return `${baseUrl}&text=${title}&dates=${dates}&details=${notes}`;
-  };
-
-  const stripMarkdown = (text: string): string => {
-    let stripped = text.replace(/\[(.*?)\]\(.*?\)/g, '$1'); // Links
-    stripped = stripped.replace(/[*_~`#]/g, ''); // Formatting
-    return stripped;
-  };
+  }, [editState.content, editState.dueDate, editState.notes]);
 
   return (
     <div 
@@ -213,6 +249,43 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, projects, onClo
                     onChange={(e) => setEditState(s => ({...s, content: e.target.value}))}
                     className="w-full bg-slate-700 text-slate-100 p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+            </div>
+             <div>
+                <label htmlFor="task-subtasks" className="block text-sm font-medium text-slate-400 mb-1">Subtasks</label>
+                <div className="space-y-2">
+                    {editState.subtasks?.map(subtask => (
+                        <div key={subtask.id} className="flex items-center gap-2 group">
+                            <input
+                                type="checkbox"
+                                checked={subtask.completed}
+                                onChange={() => handleSubtaskToggle(subtask.id)}
+                                className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <input
+                                type="text"
+                                value={subtask.content}
+                                onChange={(e) => handleSubtaskChange(subtask.id, e.target.value)}
+                                className={`w-full bg-transparent text-slate-300 outline-none focus:bg-slate-700/50 p-1 rounded-md ${subtask.completed ? 'line-through text-slate-500' : ''}`}
+                            />
+                            <button onClick={() => handleSubtaskDelete(subtask.id)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <TrashIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+                    ))}
+                    <div className="flex items-center gap-2">
+                         <input
+                            type="text"
+                            placeholder="Add new subtask..."
+                            value={newSubtask}
+                            onChange={(e) => setNewSubtask(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
+                            className="w-full bg-slate-700/50 text-slate-300 p-1 rounded-md outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-500"
+                         />
+                         <button onClick={handleAddSubtask} className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-md">
+                            <PlusIcon className="w-4 h-4" />
+                         </button>
+                    </div>
+                </div>
             </div>
             <div>
                 <label htmlFor="task-notes" className="block text-sm font-medium text-slate-400 mb-1">Notes</label>

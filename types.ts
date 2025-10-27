@@ -16,6 +16,12 @@ export interface RecurrenceRule {
   interval: number;
 }
 
+export interface Subtask {
+  id: string;
+  content: string;
+  completed: boolean;
+}
+
 export interface Task {
   id:string;
   content: string;
@@ -29,6 +35,7 @@ export interface Task {
   notes?: string;
   isPriority?: boolean;
   recurrenceRule?: RecurrenceRule;
+  subtasks?: Subtask[];
 }
 
 export interface ChatMessage {

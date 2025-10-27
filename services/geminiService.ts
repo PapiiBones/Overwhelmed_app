@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
-import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule } from '../types';
+import { Task, Importance, ChatMessage, Project, AnalysisReport, RecurrenceRule, Subtask } from '../types';
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY is not set in environment variables.");
@@ -47,6 +47,11 @@ const getSmartTaskSchema = {
     },
     isPriority: { type: Type.BOOLEAN, description: "Set to true if the task sounds like a top priority or very urgent." },
     recurrenceRule: recurrenceRuleSchema,
+    subtasks: {
+        type: Type.ARRAY,
+        description: "A list of subtasks extracted from the user's input, like from a bulleted list.",
+        items: { type: Type.STRING }
+    }
   },
   required: ['content', 'importance'],
 };
@@ -61,6 +66,11 @@ const getSmartUpdateSchema = {
         projectId: { type: Type.STRING, description: "The ID of the project to move the task to, if mentioned." },
         isPriority: { type: Type.BOOLEAN },
         recurrenceRule: recurrenceRuleSchema,
+        subtasks: {
+            type: Type.ARRAY,
+            description: "A new list of subtasks if the user added them.",
+            items: { type: Type.STRING }
+        }
     },
 };
 
@@ -78,34 +88,60 @@ const analyzeTasksSchema = {
 };
 
 
-const getSmartTask = async (prompt: string): Promise<Partial<Task>> => {
+// Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
+const getSmartTask = async (prompt: string): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Analyze the following user input and extract task details. Today's date is ${new Date().toDateString()}. Use the user's input verbatim as the 'content' field. Do NOT proofread or correct the user's text. Based on the original text, determine the task content, associated contact (if any), a single importance level, a specific due date, its priority, and any recurrence rule (e.g., 'every Monday', 'monthly'). \n\nUser Input: "${prompt}"`,
+        contents: `Analyze the following user input to extract structured task details. Today's date is ${new Date().toDateString()}.
+- The 'content' field MUST be the user's input, verbatim. Do not correct or alter it.
+- From the user's text, extract the 'dueDate' in ISO 8601 format. Be robust in parsing phrases like 'end of next week', 'in 3 days', 'every other Tuesday at 3pm', 'the 15th of every month'.
+- From the user's text, extract any 'recurrenceRule'. Provide clear examples:
+  - "every Monday" -> { frequency: 'weekly', interval: 1 }
+  - "daily" -> { frequency: 'daily', interval: 1 }
+  - "monthly" -> { frequency: 'monthly', interval: 1 }
+  - "every 2 weeks" -> { frequency: 'weekly', interval: 2 }
+- If the input contains a list (e.g., lines starting with '-', '*', or numbers), extract them as an array of strings in the 'subtasks' field.
+- Also extract 'contact', 'importance', and 'isPriority' if mentioned.
+
+User Input: "${prompt}"`,
         config: {
             responseMimeType: 'application/json',
             responseSchema: getSmartTaskSchema,
         },
     });
     
-    const result = safeParseJson<Partial<Task>>(response.text);
+    const result = safeParseJson<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }>(response.text);
     // Always use the user's original input for the task content to ensure it's not accidentally modified by the AI.
     result.content = prompt;
     return result;
 };
 
-const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[]): Promise<Partial<Task>> => {
+// Fix: Use Omit to prevent conflicting types for the 'subtasks' property.
+const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[]): Promise<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }> => {
     const projectList = projects.map(p => `"${p.name}" (ID: ${p.id})`).join(', ');
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Analyze the user's command to update a task. Today is ${new Date().toDateString()}. Your goal is to extract structured data and determine the final, clean 'content'. The final content should be the core task description, with ALL instructional phrases (like 'make it due by', 'add contact', 'change importance to', 'move to project') completely removed. ONLY return fields that have changed. If the user's update was ONLY to change metadata (like due date, priority, or project), DO NOT return the content field. Also check for new or updated recurrence rules. \n\nAvailable projects: [${projectList}]\n\nOriginal Task Content: "${originalTask.content}"\n\nUser's Updated Text: "${prompt}"`,
+        contents: `The user has edited a task's content. Analyze the *new text* to extract updated structured data. Today is ${new Date().toDateString()}.
+Return a JSON object containing ONLY the fields that should be updated.
+
+- **Date and Recurrence Parsing**: Analyze the new text for any date, time, or recurrence information. Be robust.
+  - Parse complex phrases like 'every other Friday', 'the last day of the month', or 'in 3 weeks' into a 'dueDate' (ISO 8601 format) and/or a 'recurrenceRule'.
+  - Recurrence Examples: "do laundry every Sunday" -> { "recurrenceRule": { "frequency": "weekly", "interval": 1 } }, "pay rent monthly" -> { "recurrenceRule": { "frequency": "monthly", "interval": 1 } }.
+- **Content Cleaning**: The 'content' field should be the final, clean task description. If instructional phrases like "remind me to..." were used, remove them. Otherwise, the new text itself is the new content.
+- **Subtasks**: If the new text contains a list, extract it into the 'subtasks' field as an array of strings. This should replace any existing subtasks.
+- **Other fields**: Update 'contact', 'importance', 'isPriority', or 'projectId' if mentioned.
+
+Available projects: [${projectList}]
+
+Original Task Content: "${originalTask.content}"
+New Task Content: "${prompt}"`,
         config: {
             responseMimeType: 'application/json',
             responseSchema: getSmartUpdateSchema,
         },
     });
 
-    return safeParseJson<Partial<Task>>(response.text);
+    return safeParseJson<Omit<Partial<Task>, 'subtasks'> & { subtasks?: string[] }>(response.text);
 };
 
 

@@ -47,6 +47,9 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, projects, onSelectTask, onDel
     onUpdateTask(task.id, { isPriority: !task.isPriority });
   }
 
+  const completedSubtasks = task.subtasks?.filter(s => s.completed).length || 0;
+  const totalSubtasks = task.subtasks?.length || 0;
+
   if (task.isProcessing) {
     return (
         <div className="relative flex items-start gap-4 p-4 rounded-lg bg-slate-800/50 opacity-60">
@@ -110,6 +113,12 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, projects, onSelectTask, onDel
                     <span className="flex items-center gap-1.5" title={stripMarkdown(task.notes)}>
                         <ListIcon className="w-4 h-4" />
                     </span>
+                )}
+                {totalSubtasks > 0 && (
+                  <span className="flex items-center gap-1.5 bg-slate-700/50 px-2 py-0.5 rounded-full" title={`${completedSubtasks} of ${totalSubtasks} subtasks complete`}>
+                    <CheckIcon className="w-3 h-3"/>
+                    <span>{completedSubtasks}/{totalSubtasks}</span>
+                  </span>
                 )}
             </div>
         )}

@@ -1,5 +1,5 @@
 import { useReducer, useEffect } from 'react';
-import { Task, Project, ChatMessage, UndoState } from '../types';
+import { Task, Project, ChatMessage, UndoState, Subtask } from '../types';
 
 interface AppState {
   tasks: Task[];
@@ -24,7 +24,8 @@ const appReducer = (state: AppState, action: Action): AppState => {
     case 'SET_INITIAL_STATE':
       return { ...state, ...action.payload };
     case 'ADD_TASK':
-      return { ...state, tasks: [action.payload, ...state.tasks] };
+      const taskWithSubtasks = { ...action.payload, subtasks: action.payload.subtasks || [] };
+      return { ...state, tasks: [taskWithSubtasks, ...state.tasks] };
     case 'UPDATE_TASK':
       return {
         ...state,

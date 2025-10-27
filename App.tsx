@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Task, Importance, Project, ChatMessage, ModalState, SortBy } from './types';
+import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>({ type: 'inbox' });
   const [filterBy, setFilterBy] = useState<Importance | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortBy>('timestamp');
+  const [searchTerm, setSearchTerm] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: 'none' });
 
@@ -37,10 +38,44 @@ const App: React.FC = () => {
   } = useAIActions(tasks);
   
   const completeSoundRef = useRef<HTMLAudioElement | null>(null);
+  const notifiedTaskIds = useRef(new Set());
 
   useEffect(() => {
     completeSoundRef.current = document.getElementById('complete-sound') as HTMLAudioElement;
   }, []);
+
+  // Request Notification permission
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Notification scheduling effect
+  useEffect(() => {
+    const checkNotifications = () => {
+        if (Notification.permission !== 'granted') return;
+        
+        const now = new Date();
+        const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+
+        tasks.forEach(task => {
+            if (!task.completed && task.dueDate && !notifiedTaskIds.current.has(task.id)) {
+                const dueDate = new Date(task.dueDate);
+                if (dueDate > now && dueDate <= tenMinutesFromNow) {
+                    new Notification('Task Due Soon', {
+                        body: task.content,
+                        icon: '/vite.svg'
+                    });
+                    notifiedTaskIds.current.add(task.id);
+                }
+            }
+        });
+    };
+    
+    const intervalId = setInterval(checkNotifications, 60000); // Check every minute
+    return () => clearInterval(intervalId);
+  }, [tasks]);
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -72,11 +107,19 @@ const App: React.FC = () => {
       notes: '',
       isPriority: false,
       projectId: currentView.type === 'project' ? currentView.projectId : undefined,
+      subtasks: [],
     };
     dispatch({ type: 'ADD_TASK', payload: provisionalTask });
 
     geminiService.getSmartTask(rawContent)
-      .then(smartTask => dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, isProcessing: false } } }))
+      .then(smartTask => {
+          const subtasks: Subtask[] | undefined = smartTask.subtasks?.map(content => ({
+              id: crypto.randomUUID(),
+              content,
+              completed: false
+          }));
+          dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, subtasks, isProcessing: false } } });
+      })
       .catch(error => {
         console.error("Failed to smart-add task", error);
         dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { isProcessing: false } } });
@@ -182,9 +225,22 @@ const App: React.FC = () => {
     if (currentView.type !== 'calendar' && filterBy !== 'all') {
         filtered = filtered.filter(task => task.importance === filterBy);
     }
+    
+    if (currentView.type !== 'calendar' && searchTerm) {
+        const lowercasedTerm = searchTerm.toLowerCase();
+        filtered = filtered.filter(task => {
+            const project = projects.find(p => p.id === task.projectId);
+            return (
+                task.content.toLowerCase().includes(lowercasedTerm) ||
+                (task.notes && task.notes.toLowerCase().includes(lowercasedTerm)) ||
+                (task.contact && task.contact.toLowerCase().includes(lowercasedTerm)) ||
+                (project && project.name.toLowerCase().includes(lowercasedTerm))
+            );
+        });
+    }
 
     return sortTasks(filtered, sortBy);
-  }, [tasks, currentView, filterBy, sortBy]);
+  }, [tasks, projects, currentView, filterBy, sortBy, searchTerm]);
 
   const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
   const isAddingTask = useMemo(() => tasks.some(t => t.isProcessing), [tasks]);
@@ -214,6 +270,16 @@ const App: React.FC = () => {
             <header className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl md:text-4xl font-bold text-slate-100">{currentTitle}</h1>
                 <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search tasks..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="hidden md:block bg-slate-800/50 border border-slate-700/50 rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500 transition-all w-40 focus:w-64"
+                    />
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 hidden md:block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+                  </div>
                   <button onClick={findFocusTask} disabled={isAnalyzing || activeTasksCount < 2} className="hidden sm:flex items-center gap-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
                     <StarIcon className="w-5 h-5"/> <span>Start Here</span>
                   </button>
@@ -257,10 +323,17 @@ const App: React.FC = () => {
                           </div>
                         ))
                       ) : (
-                        <div className="text-center py-16 px-4 bg-slate-800/30 rounded-lg border border-dashed border-slate-700">
-                            <h2 className="text-2xl font-semibold text-slate-300">All Clear!</h2>
-                            <p className="text-slate-400 mt-2">There are no tasks in this view. Add one above to get started!</p>
-                        </div>
+                        tasks.length === 0 ? (
+                           <div className="text-center py-16 px-4 bg-slate-800/30 rounded-lg border border-dashed border-slate-700">
+                                <h2 className="text-2xl font-semibold text-slate-300">Welcome!</h2>
+                                <p className="text-slate-400 mt-2">Get started by adding a task. Try typing 'Call Zoe tomorrow at 5' to see the AI in action.</p>
+                            </div>
+                        ) : (
+                           <div className="text-center py-16 px-4 bg-slate-800/30 rounded-lg border border-dashed border-slate-700">
+                                <h2 className="text-2xl font-semibold text-slate-300">{searchTerm ? 'No Matching Tasks' : 'All Clear!'}</h2>
+                                <p className="text-slate-400 mt-2">{searchTerm ? 'Try a different search term.' : 'There are no tasks in this view. Add one above to get started!'}</p>
+                            </div>
+                        )
                       )}
                     </div>
                   </>
