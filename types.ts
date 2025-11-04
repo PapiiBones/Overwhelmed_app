@@ -1,3 +1,6 @@
+// Fix: Add React import for React.ReactNode type
+import React from 'react';
+
 export enum Importance {
   LOW = 'Low',
   MEDIUM = 'Medium',
@@ -17,6 +20,11 @@ export interface Tag {
   color: string;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+}
+
 export interface RecurrenceRule {
   frequency: 'daily' | 'weekly' | 'monthly';
   interval: number;
@@ -31,7 +39,7 @@ export interface Subtask {
 export interface Task {
   id:string;
   content: string;
-  contact?: string;
+  contactId?: string;
   timestamp: string;
   importance: Importance;
   dueDate?: string;
@@ -42,6 +50,7 @@ export interface Task {
   isPriority?: boolean;
   recurrenceRule?: RecurrenceRule;
   subtasks?: Subtask[];
+  dependencies?: string[];
   tagIds?: string[];
 }
 
@@ -58,16 +67,42 @@ export interface ToastState {
   data?: any; 
 }
 
+export interface PriorityTask {
+  taskId: string;
+  content: string;
+}
+
+export interface Bottleneck {
+  blockingTaskId: string;
+  blockedTaskIds: string[];
+  reason: string;
+}
+
+export interface SuggestedGroup {
+  name: string;
+  taskIds: string[];
+  reason: string;
+}
+
 export interface AnalysisReport {
   summary: string;
-  priorities: string[];
+  priorities: PriorityTask[];
+  bottlenecks?: Bottleneck[];
+  suggestedGroups?: SuggestedGroup[];
 }
+
 
 export interface User {
   email: string;
 }
 
-export type SortBy = 'timestamp' | 'importance' | 'dueDate';
+export type SortBy =
+  | 'timestamp_desc'
+  | 'timestamp_asc'
+  | 'importance_desc'
+  | 'importance_asc'
+  | 'dueDate_asc'
+  | 'dueDate_desc';
 
 export type Theme = 'light' | 'dark' | 'system';
 export type ReminderTime = 5 | 10 | 15 | 30 | 60;
@@ -75,7 +110,6 @@ export type ReminderTime = 5 | 10 | 15 | 30 | 60;
 export interface AppSettings {
     theme: Theme;
     aiEnabled: boolean;
-    apiKey: string;
     reminderTime: ReminderTime;
 }
 
@@ -94,6 +128,7 @@ export interface AppState {
   tasks: Task[];
   projects: Project[];
   tags: Tag[];
+  contacts: Contact[];
   sidebarItems: SidebarItem[];
   chatHistory: ChatMessage[];
   toastState: ToastState | null;
@@ -106,4 +141,5 @@ export type ModalState =
   | { type: 'ai-analysis'; report: AnalysisReport | null }
   | { type: 'chatbot' }
   | { type: 'login' }
-  | { type: 'settings' };
+  | { type: 'settings' }
+  | { type: 'email-processor' };

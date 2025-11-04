@@ -1,5 +1,6 @@
+
 import { useReducer } from 'react';
-import { Task, Project, ChatMessage, ToastState, AppSettings, Tag, SidebarItem, AppState } from '../types';
+import { Task, Project, ChatMessage, ToastState, AppSettings, Tag, SidebarItem, AppState, Contact } from '../types';
 import { InboxIcon, DateRangeIcon, CalendarIcon } from '../components/Icons';
 import React from 'react';
 import { PROJECT_COLORS } from '../constants';
@@ -15,6 +16,7 @@ type Action =
   | { type: 'ADD_TAG'; payload: Tag }
   | { type: 'UPDATE_TAG'; payload: Tag }
   | { type: 'DELETE_TAG'; payload: string }
+  | { type: 'UPSERT_CONTACT'; payload: Contact }
   | { type: 'SET_CHAT_HISTORY'; payload: ChatMessage[] }
   | { type: 'SET_TOAST_STATE'; payload: ToastState | null }
   | { type: 'RESTORE_UNDO_STATE' }
@@ -33,13 +35,13 @@ const initialState: AppState = {
   tasks: [],
   projects: [],
   tags: [],
+  contacts: [],
   sidebarItems: initialSidebarItems,
   chatHistory: [],
   toastState: null,
   settings: {
     theme: 'system',
     aiEnabled: true,
-    apiKey: '',
     reminderTime: 10,
   }
 };
@@ -47,11 +49,39 @@ const initialState: AppState = {
 const appReducer = (state: AppState, action: Action): AppState => {
   switch (action.type) {
     case 'REPLACE_STATE': {
+      const loadedPayload = action.payload;
+      const contacts: Contact[] = loadedPayload.contacts || [];
+      const contactNameMap = new Map<string, string>();
+      contacts.forEach(c => contactNameMap.set(c.name.toLowerCase(), c.id));
+
+      const migratedTasks = (loadedPayload.tasks || []).map(t => {
+        const legacyTask = t as any;
+        if (typeof legacyTask.contact === 'string' && legacyTask.contact) {
+          const contactName = legacyTask.contact;
+          const lowerCaseName = contactName.toLowerCase();
+          let contactId = contactNameMap.get(lowerCaseName);
+
+          if (!contactId) {
+            const newContact: Contact = { id: crypto.randomUUID(), name: contactName };
+            contacts.push(newContact);
+            contactNameMap.set(lowerCaseName, newContact.id);
+            contactId = newContact.id;
+          }
+          
+          const { contact, ...newTask } = legacyTask;
+          return { ...newTask, contactId };
+        }
+        return t;
+      });
+
       const loadedState = { 
           ...initialState, 
-          ...action.payload, 
-          settings: { ...initialState.settings, ...action.payload.settings }
+          ...loadedPayload, 
+          tasks: migratedTasks,
+          contacts,
+          settings: { ...initialState.settings, ...loadedPayload.settings }
       };
+
       // Migration logic for customizable sidebar
       if (!loadedState.sidebarItems || loadedState.sidebarItems.length < 4) {
         const migratedSidebarItems = [...initialSidebarItems];
@@ -146,6 +176,13 @@ const appReducer = (state: AppState, action: Action): AppState => {
             tags: state.tags.filter(t => t.id !== tagId),
             sidebarItems: state.sidebarItems.filter(item => item.id !== tagId)
         };
+    }
+     case 'UPSERT_CONTACT': {
+      const existingContact = state.contacts.find(c => c.name.toLowerCase() === action.payload.name.toLowerCase());
+      if (existingContact) {
+        return state; // Do nothing if contact already exists
+      }
+      return { ...state, contacts: [...state.contacts, action.payload] };
     }
     case 'UPDATE_SIDEBAR_ITEM': {
         const updatedItem = action.payload;

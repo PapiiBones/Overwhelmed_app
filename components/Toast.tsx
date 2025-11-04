@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UndoIcon, ErrorIcon } from './Icons';
+import { UndoIcon, ErrorIcon, SparklesIcon } from './Icons';
 import { ToastState } from '../types';
 
 interface ToastProps {
@@ -41,7 +41,7 @@ const Toast: React.FC<ToastProps> = ({ toastState, onClose }) => {
   };
   
   const toastIcon = {
-    info: null,
+    info: <SparklesIcon className="w-5 h-5 text-indigo-400"/>,
     undo: <UndoIcon className="w-5 h-5 text-indigo-400"/>,
     error: <ErrorIcon className="w-5 h-5 text-red-400"/>,
   }

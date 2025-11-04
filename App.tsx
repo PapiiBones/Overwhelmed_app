@@ -1,39 +1,37 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-// Fix: Import AppState from types.ts
-import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings, Tag, ToastState, SidebarItem, AppState } from './types';
+import { Task, Importance, Project, ChatMessage, ModalState, SortBy, Subtask, User, AppSettings, Tag, ToastState, SidebarItem, AppState, Contact } from './types';
 import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
 import CalendarView from './components/CalendarView';
 import Toast from './components/Toast';
 import Sidebar from './components/Sidebar';
-import TaskDetailModal from './components/TaskDetailModal';
+import TaskDetailPanel from './components/TaskDetailPanel';
 import AIAnalysisModal from './components/AIAnalysisModal';
 import LoginModal from './components/LoginModal';
 import SettingsModal from './components/SettingsModal';
+import EmailProcessorModal from './components/EmailProcessorModal';
 import authService from './services/mockAuthService';
 import { geminiService } from './services/geminiService';
-import { BrainIcon, StarIcon } from './components/Icons';
 import { PROJECT_COLORS } from './constants';
-// Fix: Remove AppState from this import as it's now imported from types.ts
 import { useAppReducer } from './hooks/useAppReducer';
 import { useAIActions } from './hooks/useAIActions';
 import { sortTasks } from './utils/sorting';
 import { calculateNextDueDate } from './utils/date';
-
-type View = { type: 'project' | 'tag', id: string } | { type: 'inbox' | 'today' | 'upcoming' | 'calendar' };
+import Header from './components/Header';
 
 const App: React.FC = () => {
   const { state, dispatch } = useAppReducer();
-  const { tasks, projects, tags, sidebarItems, chatHistory, toastState, settings } = state;
+  const { tasks, projects, tags, contacts, sidebarItems, chatHistory, toastState, settings } = state;
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentViewId, setCurrentViewId] = useState<string>('inbox');
   const [filterBy, setFilterBy] = useState<Importance | 'all'>('all');
-  const [sortBy, setSortBy] = useState<SortBy>('timestamp');
+  const [sortBy, setSortBy] = useState<SortBy>('timestamp_desc');
   const [searchTerm, setSearchTerm] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [modal, setModal] = useState<ModalState>({ type: 'none' });
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const {
     isAnalyzing,
@@ -203,59 +201,83 @@ const App: React.FC = () => {
     return tagIds;
   }, [tags, dispatch]);
 
-  const addTask = useCallback(async (rawContent: string) => {
-    const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
-    const provisionalId = crypto.randomUUID();
-    let provisionalTask: Task = {
-      id: provisionalId,
+  const handleUpsertContact = useCallback((name: string): string => {
+    if (!name.trim()) return '';
+    const normalizedName = name.trim();
+    const existing = contacts.find(c => c.name.toLowerCase() === normalizedName.toLowerCase());
+    if (existing) {
+        return existing.id;
+    } else {
+        const newContact: Contact = { id: crypto.randomUUID(), name: normalizedName };
+        dispatch({ type: 'UPSERT_CONTACT', payload: newContact });
+        return newContact.id;
+    }
+  }, [contacts, dispatch]);
+
+  const addTask = useCallback(async (rawContent: string, isSmartAdd: boolean, projectId?: string) => {
+    const newTaskBase = {
+      id: crypto.randomUUID(),
       content: rawContent,
       timestamp: new Date().toISOString(),
       completed: false,
       importance: Importance.MEDIUM,
-      subtasks: [],
-      tagIds: [],
-      projectId: currentViewItem?.type === 'project' ? currentViewItem.id : undefined,
+      projectId: projectId,
+    };
+
+    if (isSmartAdd && settings.aiEnabled) {
+      dispatch({ type: 'ADD_TASK', payload: { ...newTaskBase, isProcessing: true } as Task });
+      try {
+        // Fix: Correctly destructure 'contact' as 'contactName' from the service response.
+        const { subtasks: aiSubtasks, tags: aiTags, contact: contactName, ...smartTaskData } = await geminiService.getSmartTask(rawContent);
+        
+        if (!smartTaskData.content?.trim()) {
+          throw new Error("AI response was missing a valid 'content' field.");
+        }
+
+        const subtasks: Subtask[] | undefined = aiSubtasks?.map(content => ({
+          id: crypto.randomUUID(),
+          content,
+          completed: false,
+        }));
+
+        const tagIds = aiTags ? handleTagNames(aiTags) : [];
+        const contactId = contactName ? handleUpsertContact(contactName) : undefined;
+
+        dispatch({ type: 'UPDATE_TASK', payload: { id: newTaskBase.id, updatedFields: { ...smartTaskData, subtasks, tagIds, contactId, isProcessing: false } } });
+      } catch (error) {
+        console.error("Failed to smart-add task", error);
+        dispatch({ type: 'UPDATE_TASK', payload: { id: newTaskBase.id, updatedFields: { isProcessing: false } } });
+        dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI enhancement failed. Check API key.' } });
+      }
+    } else {
+      dispatch({ type: 'ADD_TASK', payload: newTaskBase as Task });
+    }
+  }, [dispatch, settings.aiEnabled, handleTagNames, handleUpsertContact]);
+
+  const addProcessedTask = useCallback((taskData: any) => {
+    const { _rawTagNames, contact: contactName, ...restOfTaskData } = taskData;
+    const tagIds = _rawTagNames ? handleTagNames(_rawTagNames) : [];
+    const contactId = contactName ? handleUpsertContact(contactName) : undefined;
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      completed: false,
+      importance: Importance.MEDIUM, // default
+      ...restOfTaskData,
+      tagIds,
+      contactId,
     };
     
-    if (settings.aiEnabled && settings.apiKey) {
-        provisionalTask.isProcessing = true;
-        dispatch({ type: 'ADD_TASK', payload: provisionalTask });
-        try {
-            const { subtasks: aiSubtasks, tags: aiTags, ...smartTask } = await geminiService.getSmartTask(rawContent, settings.apiKey);
-            
-            const subtasks: Subtask[] | undefined = aiSubtasks?.map(content => ({
-                id: crypto.randomUUID(),
-                content,
-                completed: false
-            }));
-
-            const tagIds = aiTags ? handleTagNames(aiTags) : [];
-
-            dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { ...smartTask, subtasks, tagIds, isProcessing: false } } });
-        } catch(error) {
-            console.error("Failed to smart-add task", error);
-            dispatch({ type: 'UPDATE_TASK', payload: { id: provisionalId, updatedFields: { isProcessing: false } } });
-            dispatch({ type: 'SET_TOAST_STATE', payload: { type: 'error', message: 'AI enhancement failed. Check API key.' } });
-        }
-    } else {
-        dispatch({ type: 'ADD_TASK', payload: provisionalTask });
+    dispatch({ type: 'ADD_TASK', payload: newTask });
+  }, [dispatch, handleTagNames, handleUpsertContact]);
+  
+  const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => {
+    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedFields } });
+    if(selectedTask && selectedTask.id === id) {
+        setSelectedTask(prev => prev ? { ...prev, ...updatedFields } : null);
     }
-  }, [dispatch, sidebarItems, currentViewId, settings, handleTagNames]);
-
-  const updateTask = useCallback((id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>, aiUpdate?: { subtasks?: string[]; tags?: string[] }) => {
-    let finalUpdates = { ...updatedFields };
-    if (aiUpdate?.subtasks) {
-        finalUpdates.subtasks = aiUpdate.subtasks.map(content => ({
-            id: crypto.randomUUID(),
-            content,
-            completed: false
-        }));
-    }
-    if (aiUpdate?.tags) {
-        finalUpdates.tagIds = handleTagNames(aiUpdate.tags);
-    }
-    dispatch({ type: 'UPDATE_TASK', payload: { id, updatedFields: finalUpdates } });
-  }, [dispatch, handleTagNames]);
+  }, [dispatch, selectedTask]);
   
   const handleUndoDelete = useCallback(() => {
     dispatch({ type: 'RESTORE_UNDO_STATE' });
@@ -265,10 +287,13 @@ const App: React.FC = () => {
     const taskToDelete = tasks.find(t => t.id === id);
     if (!taskToDelete) return;
     const taskIndex = tasks.indexOf(taskToDelete);
+    if (selectedTask?.id === id) {
+        setSelectedTask(null);
+    }
     dispatch({ type: 'DELETE_TASK', payload: id });
     const toastData: ToastState = { type: 'undo', message: 'Task deleted', actionText: 'Undo', onAction: handleUndoDelete, data: { task: taskToDelete, index: taskIndex }};
     dispatch({ type: 'SET_TOAST_STATE', payload: toastData });
-  }, [dispatch, tasks, handleUndoDelete]);
+  }, [dispatch, tasks, handleUndoDelete, selectedTask]);
 
   const handleCompleteTask = useCallback((id: string, completed: boolean) => {
     const task = tasks.find(t => t.id === id);
@@ -296,15 +321,9 @@ const App: React.FC = () => {
       return;
     }
 
-    if (!settings.apiKey) {
-      const modelMessage: ChatMessage = { role: 'model', parts: [{ text: "Please add your Google AI API key in the Settings panel to use the chatbot." }] };
-      dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, modelMessage] });
-      return;
-    }
-
     setIsChatLoading(true);
     try {
-        const responseText = await geminiService.getChatResponse(chatHistory, newMessage, tasks, projects, tags, settings.apiKey);
+        const responseText = await geminiService.getChatResponse(chatHistory, newMessage, tasks, projects, tags);
         const modelMessage: ChatMessage = { role: 'model', parts: [{ text: responseText }] };
         dispatch({ type: 'SET_CHAT_HISTORY', payload: [...historyWithUserMessage, modelMessage] });
     } catch(error) {
@@ -349,11 +368,12 @@ const App: React.FC = () => {
         const lowercasedTerm = searchTerm.toLowerCase();
         filtered = filtered.filter(task => {
             const project = projects.find(p => p.id === task.projectId);
+            const contact = contacts.find(c => c.id === task.contactId);
             const taskTags = task.tagIds?.map(id => tags.find(t => t.id === id)?.name).filter(Boolean) || [];
             return (
                 task.content.toLowerCase().includes(lowercasedTerm) ||
                 (task.notes && task.notes.toLowerCase().includes(lowercasedTerm)) ||
-                (task.contact && task.contact.toLowerCase().includes(lowercasedTerm)) ||
+                (contact && contact.name.toLowerCase().includes(lowercasedTerm)) ||
                 (project && project.name.toLowerCase().includes(lowercasedTerm)) ||
                 taskTags.some(tagName => tagName.toLowerCase().includes(lowercasedTerm))
             );
@@ -361,7 +381,7 @@ const App: React.FC = () => {
     }
 
     return sortTasks(filtered, sortBy);
-  }, [tasks, projects, tags, sidebarItems, currentViewId, filterBy, sortBy, searchTerm]);
+  }, [tasks, projects, tags, contacts, sidebarItems, currentViewId, filterBy, sortBy, searchTerm]);
 
   const activeTasksCount = useMemo(() => tasks.filter(t => !t.completed).length, [tasks]);
   const isAddingTask = useMemo(() => tasks.some(t => t.isProcessing), [tasks]);
@@ -385,89 +405,98 @@ const App: React.FC = () => {
         onLoginClick={() => setModal({ type: 'login' })} onLogoutClick={handleLogout}
         onSettingsClick={() => setModal({ type: 'settings' })}
       />
-      <main className="flex-1 flex flex-col overflow-y-auto">
-        <div className="p-4 md:p-8 flex-grow">
-            <header className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl md:text-4xl font-bold text-[var(--color-text-primary)]">{currentViewItem?.label || 'Overwhelmed'}</h1>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                      className="hidden md:block bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)] transition-all w-40 focus:w-64" />
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--color-text-tertiary)] hidden md:block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-                  </div>
-                  <button onClick={findFocusTask} disabled={!settings.aiEnabled || isAnalyzing || activeTasksCount < 2} className="hidden sm:flex items-center gap-2 bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-full transition-colors">
-                    <StarIcon className="w-5 h-5"/> <span>Start Here</span>
-                  </button>
-                  <button onClick={handleAnalyze} disabled={!settings.aiEnabled || isAnalyzing || activeTasksCount === 0} 
-                    style={{ backgroundImage: `linear-gradient(to right, var(--color-button-gradient-start), var(--color-button-gradient-end))` }}
-                    className="hidden sm:flex items-center gap-2 disabled:bg-none disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-full transition-all duration-300 transform hover:scale-105">
-                      <BrainIcon className="w-5 h-5"/> <span>Analyze</span>
-                  </button>
-                </div>
-            </header>
-            
-            <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                {currentViewItem?.type !== 'calendar' && <div className="mb-6"><AddTaskForm onAddTask={addTask} isBusy={isAddingTask} settings={settings} dispatch={dispatch} /></div>}
-                {currentViewItem?.type === 'calendar' ? (
-                    <CalendarView tasks={tasks} projects={projects} tags={tags} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onUpdateTask={updateTask} />
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-center gap-4 mb-6">
-                        <div className="flex items-center gap-2 bg-[var(--color-surface-secondary)] p-1 rounded-full border border-[var(--color-border-primary)]">
-                            {(['all', ...Object.values(Importance)] as const).map(level => (
-                                <button key={level} onClick={() => setFilterBy(level)} className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${filterBy === level ? "bg-[var(--color-surface-tertiary)] text-[var(--color-text-accent)]" : `hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-secondary)]`}`}>
-                                    {level === 'all' ? 'All' : level}
-                                </button>
-                            ))}
-                        </div>
-                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm appearance-none text-[var(--color-text-secondary)]">
-                            <option value="timestamp">Sort: Newest</option>
-                            <option value="importance">Sort: Importance</option>
-                            <option value="dueDate">Sort: Due Date</option>
-                        </select>
-                    </div>
-                     <div className="space-y-4">
-                      {displayedTasks.length > 0 ? (
-                        displayedTasks.map(task => (
-                          <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
-                              <TaskItem task={task} projects={projects} tags={tags} onSelectTask={(task) => setModal({ type: 'task-detail', task })} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
-                          </div>
-                        ))
-                      ) : (
-                        (tasks.length === 0) ? (
-                           <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
+      <main className="flex-1 flex flex-col overflow-y-auto relative">
+        <div className={`flex-grow transition-all duration-300 ${selectedTask ? 'mr-[450px]' : 'mr-0'}`}>
+            <div className="p-4 md:p-8 h-full flex flex-col">
+                <Header
+                    viewLabel={currentViewItem?.label || 'Overwhelmed'}
+                    activeTasksCount={activeTasksCount}
+                    settings={settings}
+                    isAnalyzing={isAnalyzing}
+                    onAnalyze={handleAnalyze}
+                    onFindFocus={findFocusTask}
+                    searchTerm={searchTerm}
+                    onSearchTermChange={setSearchTerm}
+                    filterBy={filterBy}
+                    onFilterByChange={setFilterBy}
+                    sortBy={sortBy}
+                    onSortByChange={setSortBy}
+                    isCalendarView={currentViewItem?.type === 'calendar'}
+                    onOpenEmailProcessor={() => setModal({ type: 'email-processor' })}
+                />
+                
+                <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                    {currentViewItem?.type !== 'calendar' && 
+                      <div className="mb-6">
+                        <AddTaskForm 
+                          onAddTask={addTask} 
+                          isBusy={isAddingTask} 
+                          settings={settings} 
+                          dispatch={dispatch}
+                          projects={projects}
+                          currentViewId={currentViewId}
+                          sidebarItems={sidebarItems}
+                        />
+                      </div>
+                    }
+                    {currentViewItem?.type === 'calendar' ? (
+                        <CalendarView tasks={tasks} projects={projects} tags={tags} contacts={contacts} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setSelectedTask(task)} onUpdateTask={updateTask} />
+                    ) : (
+                      <div className="space-y-4">
+                        {displayedTasks.length > 0 ? (
+                            displayedTasks.map(task => (
+                            <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
+                                <TaskItem task={task} allTasks={tasks} projects={projects} tags={tags} contacts={contacts} onSelectTask={(task) => setSelectedTask(task)} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
+                            </div>
+                            ))
+                        ) : (
+                            (tasks.length === 0) ? (
+                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
                                 <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">Welcome! Get started by adding a task.</h2>
                                 <p className="text-[var(--color-text-tertiary)] mt-2">Try typing 'Call Zoe tomorrow at 5 #work' to see the AI in action.</p>
                             </div>
-                        ) : (
-                           <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
+                            ) : (
+                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
                                 <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">{searchTerm ? 'No Matching Tasks' : 'All Clear!'}</h2>
                                 <p className="text-[var(--color-text-tertiary)] mt-2">{searchTerm ? 'Try a different search term.' : 'There are no tasks in this view. Add one above to get started!'}</p>
                             </div>
-                        )
-                      )}
-                    </div>
-                  </>
-                )}
+                            )
+                        )}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
+        
+        {selectedTask && (
+            <TaskDetailPanel 
+              task={selectedTask} 
+              allTasks={tasks} 
+              projects={projects} 
+              tags={tags} 
+              contacts={contacts}
+              onClose={() => setSelectedTask(null)} 
+              onUpdateTask={updateTask} 
+              onDeleteTask={deleteTask}
+              onAddTag={(name) => {
+                  const newTag = { id: crypto.randomUUID(), name, color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length] };
+                  dispatch({ type: 'ADD_TAG', payload: newTag });
+                  return newTag;
+              }}
+              onUpsertContact={handleUpsertContact} 
+              settings={settings} 
+              dispatch={dispatch} 
+            />
+        )}
+
       </main>
       {settings.aiEnabled && 
           <Chatbot isOpen={modal.type === 'chatbot'} onToggle={() => setModal(prev => prev.type === 'chatbot' ? { type: 'none' } : { type: 'chatbot' })} 
           messages={chatHistory} onSendMessage={handleSendMessage} isLoading={isChatLoading} />
       }
-      {modal.type === 'task-detail' && (
-        <TaskDetailModal task={modal.task} projects={projects} tags={tags} onClose={() => setModal({ type: 'none' })} 
-          onUpdateTask={updateTask} 
-          onAddTag={(name) => {
-            const newTag = { id: crypto.randomUUID(), name, color: PROJECT_COLORS[tags.length % PROJECT_COLORS.length] };
-            dispatch({ type: 'ADD_TAG', payload: newTag });
-            return newTag;
-          }} 
-          settings={settings} dispatch={dispatch} />
-      )}
+      
       {modal.type === 'ai-analysis' && (
-        <AIAnalysisModal isLoading={isAnalyzing} report={modal.report} onClose={() => setModal({ type: 'none' })} />
+        <AIAnalysisModal isLoading={isAnalyzing} report={modal.report} onClose={() => setModal({ type: 'none' })} tasks={tasks} />
       )}
       {modal.type === 'login' && (
         <LoginModal onLogin={handleLogin} onClose={() => setModal({ type: 'none' })} />
@@ -481,6 +510,12 @@ const App: React.FC = () => {
           onDeleteAllData={handleDeleteAllData}
           onClose={() => setModal({ type: 'none' })}
         />
+      )}
+      {modal.type === 'email-processor' && (
+          <EmailProcessorModal 
+              onClose={() => setModal({ type: 'none' })}
+              onAddTask={addProcessedTask}
+          />
       )}
       <Toast toastState={toastState} onClose={() => dispatch({ type: 'SET_TOAST_STATE', payload: null })} />
     </div>

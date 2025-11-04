@@ -1,14 +1,15 @@
 import React from 'react';
-import { AnalysisReport } from '../types';
-import { CloseIcon, BrainIcon, CheckIcon } from './Icons';
+import { AnalysisReport, Task } from '../types';
+import { CloseIcon, BrainIcon, CheckIcon, LockClosedIcon } from './Icons';
 
 interface AIAnalysisModalProps {
   report: AnalysisReport | null;
   onClose: () => void;
   isLoading: boolean;
+  tasks: Task[];
 }
 
-const AIAnalysisModal: React.FC<AIAnalysisModalProps> = ({ report, onClose, isLoading }) => {
+const AIAnalysisModal: React.FC<AIAnalysisModalProps> = ({ report, onClose, isLoading, tasks }) => {
   return (
     <div 
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 animate-fade-in"
@@ -37,22 +38,78 @@ const AIAnalysisModal: React.FC<AIAnalysisModalProps> = ({ report, onClose, isLo
             </div>
           ) : (
             report && (
-                <>
-                <p className="text-[var(--color-text-secondary)] mb-6 text-lg">{report.summary}</p>
-                {report.priorities.length > 0 && (
-                    <>
-                        <h4 className="font-semibold text-[var(--color-text-primary)] mb-3 text-lg border-b border-[var(--color-border-secondary)] pb-2">Your Top Priorities:</h4>
-                        <ul className="space-y-3">
-                            {report.priorities.map((item, index) => (
-                                <li key={index} className="flex items-start gap-3 p-3 bg-[var(--color-surface-secondary)] rounded-md">
-                                    <CheckIcon className="w-5 h-5 mt-0.5 text-indigo-400 flex-shrink-0" />
-                                    <span className="text-[var(--color-text-primary)]">{item}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </>
-                )}
-                </>
+                <div className="space-y-6">
+                    <p className="text-[var(--color-text-secondary)] text-lg">{report.summary}</p>
+                    
+                    {report.priorities.length > 0 && (
+                        <div>
+                            <h4 className="font-semibold text-[var(--color-text-primary)] mb-3 text-lg border-b border-[var(--color-border-secondary)] pb-2">Your Top Priorities:</h4>
+                            <ul className="space-y-3">
+                                {report.priorities.map((item, index) => (
+                                    <li key={index} className="flex items-start gap-3 p-3 bg-[var(--color-surface-secondary)] rounded-md">
+                                        <CheckIcon className="w-5 h-5 mt-0.5 text-indigo-400 flex-shrink-0" />
+                                        <span className="text-[var(--color-text-primary)]">{item.content}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {report.bottlenecks && report.bottlenecks.length > 0 && (
+                        <div>
+                            <h4 className="font-semibold text-[var(--color-text-primary)] mb-3 text-lg border-b border-[var(--color-border-secondary)] pb-2">Potential Bottlenecks</h4>
+                            <ul className="space-y-4">
+                                {report.bottlenecks.map((bottleneck, index) => {
+                                    const blockingTask = tasks.find(t => t.id === bottleneck.blockingTaskId);
+                                    const blockedTasks = bottleneck.blockedTaskIds.map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
+
+                                    if (!blockingTask) return null;
+
+                                    return (
+                                        <li key={index} className="p-3 bg-amber-500/10 border-l-4 border-amber-500 rounded-r-md">
+                                            <div className="flex items-start gap-3">
+                                                <LockClosedIcon className="w-5 h-5 mt-0.5 text-amber-400 flex-shrink-0" />
+                                                <div>
+                                                    <p className="font-semibold text-amber-400">"{blockingTask.content}" is blocking {blockedTasks.length} task(s).</p>
+                                                    <p className="text-sm text-[var(--color-text-secondary)] mt-1">{bottleneck.reason}</p>
+                                                    {blockedTasks.length > 0 && (
+                                                        <ul className="mt-2 space-y-1 text-sm list-disc list-inside text-[var(--color-text-tertiary)]">
+                                                            {blockedTasks.map(bt => <li key={bt.id}>{bt.content}</li>)}
+                                                        </ul>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
+
+                    {report.suggestedGroups && report.suggestedGroups.length > 0 && (
+                        <div>
+                            <h4 className="font-semibold text-[var(--color-text-primary)] mb-3 text-lg border-b border-[var(--color-border-secondary)] pb-2">Suggested Groups</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {report.suggestedGroups.map((group, index) => {
+                                    const groupTasks = group.taskIds.map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
+                                    return (
+                                        <div key={index} className="p-4 bg-[var(--color-surface-secondary)] rounded-lg">
+                                            <h5 className="font-bold text-sky-400">{group.name}</h5>
+                                            <p className="text-xs text-[var(--color-text-tertiary)] mb-3">{group.reason}</p>
+                                            <ul className="space-y-1.5 text-sm">
+                                                {groupTasks.map(task => (
+                                                    <li key={task.id} className="text-[var(--color-text-secondary)] truncate">
+                                                        - {task.content}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
             )
           )}
         </main>

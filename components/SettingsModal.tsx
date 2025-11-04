@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from 'react';
 import { AppSettings } from '../types';
 import { CloseIcon } from './Icons';
@@ -13,15 +14,9 @@ interface SettingsModalProps {
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdateSettings, onExport, onImport, onClose, onDeleteAllData }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [apiKey, setApiKey] = useState(settings.apiKey);
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
-  };
-
-  const handleApiKeySave = () => {
-    onUpdateSettings({ apiKey });
-    alert("API Key saved!");
   };
   
   const handleDeleteClick = () => {
@@ -77,21 +72,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onUpdateSetting
                     </button>
                 </div>
                 <p className="text-xs text-[var(--color-text-tertiary)] mt-1">Enables features like Smart Add, Smart Update, and AI Analysis.</p>
-                <div className="mt-4">
-                    <label htmlFor="api-key" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Google AI API Key</label>
-                    <div className="flex gap-2">
-                        <input
-                            id="api-key"
-                            type="password"
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            placeholder="Enter your API key..."
-                            className="flex-grow w-full bg-[var(--color-surface-tertiary)] text-[var(--color-text-primary)] p-2 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)]"
-                        />
-                         <button onClick={handleApiKeySave} className="px-4 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-md transition-colors text-sm">Save</button>
-                    </div>
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-400 hover:underline mt-1">Get your key from Google AI Studio</a>
-                </div>
             </div>
           </div>
 

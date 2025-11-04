@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, SidebarItem, AppState } from '../types';
-import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon, PencilIcon, CheckIcon, GripVerticalIcon } from './Icons';
+import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon, PencilIcon, CheckIcon } from './Icons';
 
 interface SidebarProps {
   sidebarItems: SidebarItem[];
@@ -84,15 +84,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                 onDragStart={(e) => handleDragStart(e, item)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, item)}
-                className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
+                className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-grab transition-colors ${
                     currentViewId === item.id ? 'bg-[var(--color-nav-item-active-bg)] text-[var(--color-nav-item-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)]'
                 }`}
                 onClick={() => onSelectView(item.id)}
             >
                 <div className="flex items-center gap-3">
-                    <span className="text-[var(--color-text-tertiary)] group-hover:text-[var(--color-text-primary)] cursor-grab">
-                        <GripVerticalIcon className="w-4 h-4" />
-                    </span>
                     {item.color ? <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: item.color}} /> : getIconForType(item.type)}
                     {editingItemId === item.id && item.isEditable ? (
                          <input

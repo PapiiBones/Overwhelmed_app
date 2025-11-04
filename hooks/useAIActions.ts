@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { geminiService } from '../services/geminiService';
 import { Task, AnalysisReport, AppSettings } from '../types';
@@ -7,12 +8,12 @@ export const useAIActions = (tasks: Task[], settings: AppSettings) => {
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
 
   const analyzeTasks = async (): Promise<AnalysisReport | null> => {
-    if (!settings.aiEnabled || !settings.apiKey) {
-      return { summary: "AI features are disabled or API key is not set.", priorities: [] };
+    if (!settings.aiEnabled) {
+      return { summary: "AI features are disabled.", priorities: [] };
     }
     setIsAnalyzing(true);
     try {
-      const result = await geminiService.analyzeTasks(tasks, settings.apiKey);
+      const result = await geminiService.analyzeTasks(tasks);
       return result;
     } catch (error) {
       console.error("AI Analysis failed", error);
@@ -24,10 +25,10 @@ export const useAIActions = (tasks: Task[], settings: AppSettings) => {
   };
 
   const findFocusTask = async () => {
-    if (!settings.aiEnabled || !settings.apiKey) return;
+    if (!settings.aiEnabled) return;
     setIsAnalyzing(true);
     try {
-      const focusedId = await geminiService.getFocusTask(tasks, settings.apiKey);
+      const focusedId = await geminiService.getFocusTask(tasks);
       setFocusTaskId(focusedId);
     } catch (error) {
       console.error("Focus mode failed", error);

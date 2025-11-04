@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-// Fix: Add Contact to imports
 import { Task, Project, Importance, RecurrenceRule, Subtask, AppSettings, Tag, ToastState, Contact } from '../types';
 import { geminiService } from '../services/geminiService';
 import { CloseIcon, CalendarIcon, PlusIcon, TrashIcon, SparklesIcon, CheckIcon } from './Icons';
@@ -9,7 +8,6 @@ interface TaskDetailPanelProps {
   allTasks: Task[];
   projects: Project[];
   tags: Tag[];
-  // Fix: Add contacts and onUpsertContact props
   contacts: Contact[];
   onClose: () => void;
   onUpdateTask: (id: string, updatedTask: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
@@ -35,7 +33,7 @@ const SMART_UPDATE_KEYWORDS = [
 ];
 const smartUpdateRegex = new RegExp(`(${SMART_UPDATE_KEYWORDS.join('|')})`, 'i');
 
-// Fix: Update AISuggestion to include optional 'contact' string property
+// Fix: Update AISuggestion to include optional 'contact' string
 type AISuggestion = Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; suggestionText?: string; contact?: string };
 
 const shouldAttemptSmartUpdate = (text: string): boolean => {
@@ -174,7 +172,7 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, allTasks, proje
             completed: false
         }));
     }
-
+    
     if (contactName) {
         setContactInput(contactName);
     }
@@ -209,7 +207,7 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, allTasks, proje
     const getChangedFields = (currentState: Partial<Task>): Partial<Omit<Task, 'id' | 'timestamp'>> => {
       const changes: Partial<Omit<Task, 'id' | 'timestamp'>> = {};
       (Object.keys(currentState) as Array<keyof Task>).forEach(key => {
-        if (key !== 'id' && key !== 'timestamp' && key !== 'contactId') {
+        if (key !== 'id' && key !== 'timestamp' && key !== 'contactId') { // Exclude contactId from this check
           if (key === 'recurrenceRule' || key === 'subtasks' || key === 'tagIds' || key === 'dependencies') {
             if (JSON.stringify(currentState[key]) !== JSON.stringify(task[key])) {
                (changes as any)[key] = currentState[key];
@@ -520,7 +518,6 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, allTasks, proje
                 </div>
                 <div>
                     <label htmlFor="task-contact" className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Contact</label>
-                    {/* Fix: Use contactInput state for value and onChange */}
                     <input 
                         id="task-contact"
                         type="text"

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Task, Project, Tag } from '../types';
+import { Task, Project, Tag, Contact } from '../types';
 import TaskItem from './TaskItem';
 import { CloseIcon } from './Icons';
 import { sortTasks } from '../utils/sorting';
@@ -9,6 +9,7 @@ interface DayDetailModalProps {
   tasks: Task[];
   projects: Project[];
   tags: Tag[];
+  contacts: Contact[];
   onClose: () => void;
   onDeleteTask: (id: string) => void;
   onComplete: (id: string, completed: boolean) => void;
@@ -16,7 +17,7 @@ interface DayDetailModalProps {
   onUpdateTask: (id: string, updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>>) => void;
 }
 
-const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, tags, onClose, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
+const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, tags, contacts, onClose, onDeleteTask, onComplete, onSelectTask, onUpdateTask }) => {
   const formattedDate = date.toLocaleDateString(undefined, {
     weekday: 'long',
     year: 'numeric',
@@ -24,7 +25,8 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
     day: 'numeric',
   });
 
-  const sortedTasks = sortTasks(tasks, 'importance');
+  // Fix: Use a valid SortBy value. 'importance_desc' is likely the intended behavior to show most important tasks first.
+  const sortedTasks = sortTasks(tasks, 'importance_desc');
 
   return (
     <div 
@@ -48,8 +50,10 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, tasks, projects, 
               <TaskItem
                 key={task.id}
                 task={task}
+                allTasks={tasks}
                 projects={projects}
                 tags={tags}
+                contacts={contacts}
                 onSelectTask={onSelectTask}
                 onDeleteTask={onDeleteTask}
                 onComplete={onComplete}

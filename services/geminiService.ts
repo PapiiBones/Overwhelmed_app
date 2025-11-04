@@ -2,6 +2,10 @@ import { GoogleGenAI, Type, Content as GeminiChatMessage } from "@google/genai";
 import { Task, Importance, ChatMessage, Project, AnalysisReport, Tag } from '../types';
 
 const safeParseJson = <T>(rawText: string): T => {
+    // Handle cases where the AI might return an empty object for no changes.
+    if (rawText.trim() === '{}') {
+        return {} as T;
+    }
     const cleanedText = rawText.trim().replace(/^```json\s*/, '').replace(/```$/, '');
     try {
         return JSON.parse(cleanedText) as T;
@@ -43,7 +47,7 @@ const getSmartTaskSchema = {
     },
     tags: {
         type: Type.ARRAY,
-        description: "A list of tags extracted from hashtags in the user's input, without the '#'.",
+        description: "A list of relevant tags or categories extracted from the user's input, such as 'work', 'personal', 'shopping'. Do not require a '#' prefix.",
         items: { type: Type.STRING }
     }
   },
@@ -56,7 +60,10 @@ const getSmartUpdateSchema = {
         content: { type: Type.STRING, description: "The final, clean content of the task, with any instructional phrases removed. Only return this field if the core task description has changed." },
         contact: { type: Type.STRING },
         importance: { type: Type.STRING, enum: Object.values(Importance) },
-        dueDate: { type: Type.STRING },
+        dueDate: { 
+            type: Type.STRING,
+            description: "The due date and time for the task in ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ). Extract this from phrases like 'tomorrow at 5pm', 'next Friday', etc. Use the current date for context if needed.",
+        },
         projectId: { type: Type.STRING, description: "The ID of the project to move the task to, if mentioned." },
         isPriority: { type: Type.BOOLEAN },
         recurrenceRule: recurrenceRuleSchema,
@@ -67,8 +74,12 @@ const getSmartUpdateSchema = {
         },
         tags: {
             type: Type.ARRAY,
-            description: "A new list of tags extracted from hashtags in the user's input, without the '#'. This should replace existing tags.",
+            description: "A new list of tags extracted from the new text. This should replace existing tags. Do not require a '#' prefix.",
             items: { type: Type.STRING }
+        },
+        suggestionText: {
+            type: Type.STRING,
+            description: "If any fields are being updated, this field MUST be included. It should be a short, human-readable summary of the changes proposed. Example: 'Set due date to tomorrow at 5pm and add #work tag.'"
         }
     },
 };
@@ -79,67 +90,207 @@ const analyzeTasksSchema = {
         summary: { type: Type.STRING, description: "A brief, encouraging, and actionable summary of the user's tasks." },
         priorities: {
             type: Type.ARRAY,
-            description: "A list of the top 3 priority task descriptions based on importance and due dates.",
-            items: { type: Type.STRING }
+            description: "A list of the top 3-5 priority tasks based on importance and due dates.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    taskId: { type: Type.STRING, description: "The ID of the priority task." },
+                    content: { type: Type.STRING, description: "The content of the priority task." }
+                },
+                required: ['taskId', 'content']
+            }
+        },
+        bottlenecks: {
+            type: Type.ARRAY,
+            description: "A list of identified bottlenecks, where one or more tasks are blocked by an incomplete dependency.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    blockingTaskId: { type: Type.STRING, description: "The ID of the task that is blocking others." },
+                    blockedTaskIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of IDs of tasks that are blocked." },
+                    reason: { type: Type.STRING, description: "A brief explanation of why this is a bottleneck (e.g., 'Overdue task blocking two high-priority items')." }
+                },
+                required: ['blockingTaskId', 'blockedTaskIds', 'reason']
+            }
+        },
+        suggestedGroups: {
+            type: Type.ARRAY,
+            description: "A list of suggested task groupings based on common themes, projects, or action types (e.g., 'All emails to send').",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    name: { type: Type.STRING, description: "The name for the suggested group (e.g., 'Client Follow-ups')." },
+                    taskIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of task IDs belonging to this group." },
+                    reason: { type: Type.STRING, description: "A brief explanation for the grouping (e.g., 'These tasks are all related to the same project.')." }
+                },
+                required: ['name', 'taskIds', 'reason']
+            }
         }
     },
     required: ['summary', 'priorities'],
 };
 
 
-const getSmartTask = async (prompt: string, apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
-    if (!apiKey) throw new Error("API Key is required for AI features.");
-    const ai = new GoogleGenAI({ apiKey });
+// Fix: Update return type to include optional 'contact' string
+const getSmartTask = async (prompt: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[], contact?: string }> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const timezoneOffset = new Date().getTimezoneOffset();
+    const offsetHours = -timezoneOffset / 60;
+    const offsetString = `UTC${offsetHours >= 0 ? '+' : ''}${String(Math.trunc(offsetHours)).padStart(2, '0')}:${String(Math.abs(offsetHours * 60) % 60).padStart(2, '0')}`;
+
+
+    const systemInstruction = `You are an expert-level command parser for a planner app. Your job is to analyze a user's single-line input and create a structured task as a JSON object.
+
+**CONTEXT:**
+- Current Time (UTC): ${new Date().toISOString()}
+- User's Approximate Timezone: ${offsetString}
+
+**RULES (Follow these steps precisely):**
+
+1.  **Core Content Extraction (Highest Priority):**
+    -   Identify the main action the user wants to do. This will be the \`content\` field.
+    -   You MUST REMOVE all instructional phrases ("remind me to"), dates, times, and tags from the final \`content\` field. This field must be clean.
+
+2.  **Date/Time Extraction & Conversion (CRITICAL):**
+    -   Scan the user input for any date or time phrases (e.g., "tomorrow at 5pm", "next Friday", "at 9am").
+    -   You MUST assume the user is referring to their local time (see "User's Approximate Timezone" context).
+    -   You MUST convert this local time to a complete and valid UTC ISO 8601 string for the \`dueDate\` field (e.g., "YYYY-MM-DDTHH:mm:ss.sssZ"). This is the most critical step.
+
+3.  **Time-Only Logic (in User's Local Time):**
+    -   If only a time is given (e.g., "call mom at 9am"), you MUST use the "Current Time" and "User's Timezone" to determine the user's current local time, and then decide the date:
+        -   If the specified time is later today (in the user's local time), use today's date.
+        -   If the specified time has already passed today (in the user's local time), use TOMORROW's date.
+
+4.  **Tag Extraction:**
+    -   Identify keywords that could be tags (e.g., "for work", "shopping"). Do not require a '#' prefix. Add them to a \`tags\` array of strings.
+
+5.  **Other Properties:**
+    -   Determine \`importance\` based on keywords like "urgent" or "critical". Default to "Medium".
+    -   Extract any subtasks into a \`subtasks\` array of strings.
+
+6.  **Final JSON:**
+    -   Your output must be a valid JSON object containing all extracted properties. The \`content\` and \`importance\` fields are required.
+
+**EXAMPLE SCENARIO:**
+- Current Time (UTC): "2024-08-20T21:00:00.000Z"
+- User's Approximate Timezone: "UTC-4"
+- User Input: "remind me to submit the project proposal at 10am tomorrow"
+
+**YOUR THOUGHT PROCESS (internal monologue):**
+1.  The user's core task is "submit the project proposal".
+2.  A time is mentioned: "10am tomorrow". This is in the user's local time (UTC-4).
+3.  "Tomorrow" relative to the user is August 21st. The local due time is 10:00 AM on August 21st.
+4.  To convert 10:00 AM from UTC-4 to UTC, I must ADD 4 hours.
+5.  10:00 + 4 hours = 14:00 UTC.
+6.  I will construct the final UTC ISO string: "2024-08-21T14:00:00.000Z".
+7.  No special importance, default to "Medium".
+8.  My final JSON will have \`content\`, \`dueDate\`, and \`importance\`.
+
+**YOUR JSON OUTPUT FOR EXAMPLE:**
+\`\`\`json
+{
+  "content": "Submit the project proposal",
+  "dueDate": "2024-08-21T14:00:00.000Z",
+  "importance": "Medium"
+}
+\`\`\``;
+
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Analyze the following user input to extract structured task details. Today's date is ${new Date().toDateString()}.
-- **Content Cleaning**: The 'content' field is crucial. It must be the final, clean task description. If the user's input includes instructional phrases like 'remind me to...', 'add a task to...', or the date/time information itself, remove them from the final content. For example, if the input is "remind me to call the client tomorrow at 2pm #work", the content should be "Call the client".
-- **Date and Recurrence Parsing**: From the user's text, extract the 'dueDate' in ISO 8601 format and any 'recurrenceRule'. Be robust. Examples:
-  - "every Monday" -> { frequency: 'weekly', interval: 1 }
-  - "every 2 weeks" -> { frequency: 'weekly', interval: 2 }
-- **Subtasks & Tags**: If the input contains a list (e.g., lines with '-', '*', numbers), extract them as 'subtasks'. If it contains hashtags (e.g., #work), extract them as 'tags' (without the '#').
-- Also extract 'contact', 'importance', and 'isPriority' if mentioned.
-
-User Input: "${prompt}"`,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
+            systemInstruction,
             responseMimeType: 'application/json',
             responseSchema: getSmartTaskSchema,
         },
     });
     
-    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
+    // Fix: Update safeParseJson generic to match new return type
+    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; contact?: string }>(response.text);
 };
 
-const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[], apiKey: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }> => {
-    if (!apiKey) throw new Error("API Key is required for AI features.");
-    const ai = new GoogleGenAI({ apiKey });
+// Fix: Update return type to include optional 'contact' string
+const getSmartUpdate = async (prompt: string, originalTask: Task, projects: Project[]): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; suggestionText?: string; contact?: string }> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const projectList = projects.map(p => `"${p.name}" (ID: ${p.id})`).join(', ');
+    const timezoneOffset = new Date().getTimezoneOffset();
+    const offsetHours = -timezoneOffset / 60;
+    const offsetString = `UTC${offsetHours >= 0 ? '+' : ''}${String(Math.trunc(offsetHours)).padStart(2, '0')}:${String(Math.abs(offsetHours * 60) % 60).padStart(2, '0')}`;
+    
+    const systemInstruction = `You are an expert-level task property extractor for a planner app. Your job is to analyze the new user-provided task content and determine if any properties like due date, tags, or importance should be updated. You must return a JSON object with ONLY the changed fields.
+
+**CONTEXT:**
+- Current Time (UTC): ${new Date().toISOString()}
+- User's Approximate Timezone: ${offsetString}
+- Original Task Content: "${originalTask.content}"
+
+**RULES (Follow these steps precisely):**
+
+1.  **Analyze for Changes:** Compare the user input to the "Original Task Content".
+
+2.  **Date/Time Extraction & Conversion (CRITICAL):**
+    -   Scan the user input for any date or time phrases (e.g., "tomorrow", "at 5pm", "next Friday").
+    -   You MUST assume the user is referring to their local time (see "User's Approximate Timezone" context).
+    -   You MUST convert this local time to a complete and valid UTC ISO 8601 string for the \`dueDate\` field (e.g., "YYYY-MM-DDTHH:mm:ss.sssZ").
+
+3.  **Time-Only Logic (in User's Local Time):**
+    -   If only a time is given (e.g., "...at 9am"), you MUST use the "Current Time" and "User's Timezone" to determine the user's current local time, and then decide the date:
+        -   If the specified time is later today (in local time), use today's date.
+        -   If the specified time has already passed today (in local time), use TOMORROW's date.
+
+4.  **Content Cleaning:**
+    -   If you extracted a date, time, or tag, the main \`content\` field in your response MUST be the user input with that information removed.
+    -   Only include the \`content\` field if it's different from the "Original Task Content" after cleaning.
+
+5.  **Suggestion Text:**
+    -   If and only if you are updating at least one field, you MUST create a short, human-readable summary of the changes in the \`suggestionText\` field. Example: "Set due date to tomorrow at 9:00 AM and update content."
+
+6.  **Final JSON:**
+    -   Your output must be a valid JSON object.
+    -   If no properties changed, return an empty JSON object \`{}\`.
+    -   Otherwise, return the JSON object containing ONLY the fields that changed (\`dueDate\`, \`content\`, \`tags\`, etc.) plus the mandatory \`suggestionText\`.
+
+**EXAMPLE SCENARIO:**
+- Current Time (UTC): "2024-08-20T21:00:00.000Z"
+- User's Approximate Timezone: "UTC-4"
+- Original Task Content: "Call the contractor"
+- User Input (New Task Content): "Call the contractor at 11am"
+
+**YOUR THOUGHT PROCESS (internal monologue):**
+1.  The user added "at 11am". This is a local time.
+2.  The current local time is 5 PM (21:00 UTC - 4 hours). 11 AM has already passed today for the user.
+3.  Therefore, the due date must be for TOMORROW at 11 AM local time.
+4.  Tomorrow's date is 2024-08-21. The local time is 11:00 AM.
+5.  To convert 11:00 AM from local (UTC-4) to UTC, I must ADD 4 hours. 11:00 + 4 hours = 15:00 UTC.
+6.  I will construct the UTC ISO string: "2024-08-21T15:00:00.000Z".
+7.  The core content is unchanged.
+8.  I need to create a \`suggestionText\`: "Set due date to tomorrow at 11:00 AM."
+9.  My final JSON will have \`dueDate\` and \`suggestionText\`.
+
+**YOUR JSON OUTPUT FOR EXAMPLE:**
+\`\`\`json
+{
+  "dueDate": "2024-08-21T15:00:00.000Z",
+  "suggestionText": "Set due date to tomorrow at 11:00 AM."
+}
+\`\`\``;
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `The user has edited a task's content. Analyze the *new text* to extract updated structured data. Today is ${new Date().toDateString()}.
-Return a JSON object containing ONLY the fields that should be updated.
-
-- **Date and Recurrence Parsing**: Analyze the new text for any date, time, or recurrence information. Be robust.
-- **Content Cleaning**: The 'content' field should be the final, clean task description, with instructional phrases removed.
-- **Subtasks & Tags**: If the new text contains a list or hashtags, extract them into the 'subtasks' or 'tags' fields, respectively. These should replace any existing ones.
-- **Other fields**: Update 'contact', 'importance', 'isPriority', or 'projectId' if mentioned.
-
-Available projects: [${projectList}]
-
-Original Task Content: "${originalTask.content}"
-New Task Content: "${prompt}"`,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
+            systemInstruction,
             responseMimeType: 'application/json',
             responseSchema: getSmartUpdateSchema,
         },
     });
 
-    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds'> & { subtasks?: string[]; tags?: string[] }>(response.text);
+    // Fix: Update safeParseJson generic to match new return type
+    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; suggestionText?: string; contact?: string }>(response.text);
 };
 
-const analyzeTasks = async (tasks: Task[], apiKey: string): Promise<AnalysisReport> => {
-    if (!apiKey) throw new Error("API Key is required for AI features.");
-    const ai = new GoogleGenAI({ apiKey });
+const analyzeTasks = async (tasks: Task[]): Promise<AnalysisReport> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const activeTasks = tasks.filter(task => !task.completed);
     
     if (activeTasks.length === 0) {
@@ -149,14 +300,31 @@ const analyzeTasks = async (tasks: Task[], apiKey: string): Promise<AnalysisRepo
         };
     }
 
-    const taskDescriptions = activeTasks.map(t => `- "${t.content}" (Importance: ${t.importance}${t.dueDate ? `, Due: ${new Date(t.dueDate).toLocaleString()}` : ''})`).join('\n');
+    const taskDataForPrompt = activeTasks.map(t => ({
+        id: t.id,
+        content: t.content,
+        importance: t.importance,
+        dueDate: t.dueDate,
+        dependencies: t.dependencies || [],
+    }));
     
-    const prompt = `Here is a list of today's tasks:\n${taskDescriptions}\n\nProvide a brief, encouraging, and actionable summary. Identify the top 3 priorities based on importance and upcoming due dates.`;
+    const prompt = `Here is a list of the user's active tasks in JSON format:\n${JSON.stringify(taskDataForPrompt, null, 2)}\n\nBased on these tasks, provide a detailed analysis.`;
+
+    const systemInstruction = `You are an expert productivity assistant. Your goal is to analyze a user's task list and provide insightful, actionable feedback. Today's date is ${new Date().toISOString()}.
+
+Your analysis must include:
+1.  **Summary**: A brief, encouraging, and actionable overview of the user's current workload.
+2.  **Priorities**: Identify the top 3-5 tasks that require immediate attention. Base this on 'CRITICAL' or 'HIGH' importance and imminent or overdue due dates. For each, provide the task ID and its content.
+3.  **Bottlenecks**: Identify tasks that are blocking other tasks. A bottleneck occurs when an incomplete task (the blocker) is in the 'dependencies' list of other tasks (the blocked). Prioritize bottlenecks where the blocker is overdue or of high-importance. Only include bottlenecks if there are any.
+4.  **Suggested Groups**: Group tasks by common themes, projects, or contexts (e.g., 'All emails to send', 'Project Phoenix tasks'). This helps the user with batch processing. Only include suggested groups if you find meaningful ones.
+
+Return your response strictly as a JSON object matching the provided schema. Do not include any other text or formatting.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-pro',
         contents: prompt,
         config: {
+            systemInstruction,
             responseMimeType: 'application/json',
             responseSchema: analyzeTasksSchema,
         },
@@ -165,9 +333,8 @@ const analyzeTasks = async (tasks: Task[], apiKey: string): Promise<AnalysisRepo
     return safeParseJson<AnalysisReport>(response.text);
 };
 
-const getFocusTask = async (tasks: Task[], apiKey: string): Promise<string | null> => {
-    if (!apiKey) throw new Error("API Key is required for AI features.");
-    const ai = new GoogleGenAI({ apiKey });
+const getFocusTask = async (tasks: Task[]): Promise<string | null> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const activeTasks = tasks.filter(task => !task.completed);
     if (activeTasks.length < 2) {
         return activeTasks[0]?.id || null;
@@ -184,9 +351,8 @@ const getFocusTask = async (tasks: Task[], apiKey: string): Promise<string | nul
     return activeTasks.some(t => t.id === focusedId) ? focusedId : activeTasks[0].id;
 };
 
-const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], tags: Tag[], apiKey: string): Promise<string> => {
-    if (!apiKey) throw new Error("API Key is required for AI features.");
-    const ai = new GoogleGenAI({ apiKey });
+const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks: Task[], projects: Project[], tags: Tag[]): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const taskContext = tasks.length > 0
         ? `Here is the user's current list of tasks:\n${tasks.map(t => `- [${t.completed ? 'X' : ' '}] ${t.content} (ID: ${t.id}, Importance: ${t.importance}, Project: ${projects.find(p=>p.id === t.projectId)?.name || 'Inbox'})`).join('\n')}`
@@ -219,9 +385,8 @@ const getChatResponse = async (history: ChatMessage[], newMessage: string, tasks
     return response.text;
 };
 
-const transcribeAudio = async (audioBase64: string, apiKey: string): Promise<string> => {
-    if (!apiKey) throw new Error("API Key is required for audio transcription.");
-    const ai = new GoogleGenAI({ apiKey });
+const transcribeAudio = async (audioBase64: string): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const audioPart = {
       inlineData: {
@@ -242,6 +407,67 @@ const transcribeAudio = async (audioBase64: string, apiKey: string): Promise<str
     return response.text.trim();
   };
 
+// Fix: Update return type to include optional 'contact' string
+const createTaskFromEmail = async (emailContent: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; contact?: string }> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const timezoneOffset = new Date().getTimezoneOffset();
+    const offsetHours = -timezoneOffset / 60;
+    const offsetString = `UTC${offsetHours >= 0 ? '+' : ''}${String(Math.trunc(offsetHours)).padStart(2, '0')}:${String(Math.abs(offsetHours * 60) % 60).padStart(2, '0')}`;
+    
+    const systemInstruction = `You are an expert-level email processor for a planner app. Your job is to analyze the full text of an email and extract a single, primary, actionable task. You must return a structured JSON object representing this task.
+
+**CONTEXT:**
+- Current Time (UTC): ${new Date().toISOString()}
+- User's Approximate Timezone: ${offsetString}
+
+**RULES (Follow these steps precisely):**
+
+1.  **Identify the Primary Action:** Read the entire email and identify the single most important thing the recipient needs to do. If there are multiple actions, choose the most prominent or urgent one.
+2.  **Summarize the Action (CRITICAL):** Create a concise summary of this action. This summary will be the \`content\` of the task. It should be clear and brief (e.g., "Draft the quarterly report", not the entire paragraph about it).
+3.  **Extract Due Date (CRITICAL):**
+    -   Scan the email for any mention of a deadline, due date, or meeting time (e.g., "by Friday at 5pm", "next Tuesday", "on the 15th").
+    -   You MUST assume the user is referring to their local time (see "User's Approximate Timezone").
+    -   You MUST convert this local time to a complete and valid UTC ISO 8601 string for the \`dueDate\` field.
+    -   **If no specific date or deadline is mentioned, you MUST NOT create a \`dueDate\` field.**
+4.  **Extract Other Details:**
+    -   Identify any people involved and put the primary contact in the \`contact\` field.
+    -   Determine the \`importance\` based on keywords like "urgent", "important", "ASAP". Default to "Medium".
+    -   Extract any relevant keywords that could be tags (e.g., "report", "marketing", "clientX") into a \`tags\` array of strings.
+5.  **Final JSON:**
+    -   Your output must be a valid JSON object.
+    -   The \`content\` and \`importance\` fields are required. If no due date is found, do not include the \`dueDate\` field in the JSON.
+
+**EXAMPLE EMAIL:**
+"Hey,
+Just following up on our call. We'll need the draft for the Q3 marketing report by end of day this Friday. It's pretty important we get this to the board for review before next week. Let me know if you have any questions.
+Thanks,
+Jane"
+
+**YOUR JSON OUTPUT FOR EXAMPLE:**
+\`\`\`json
+{
+  "content": "Draft the Q3 marketing report",
+  "dueDate": "YYYY-MM-DDTHH:mm:ss.sssZ", // The calculated UTC ISO string for Friday EOD
+  "importance": "High",
+  "contact": "Jane",
+  "tags": ["marketing", "report"]
+}
+\`\`\``;
+    
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-pro', // Use a more powerful model for long-form text
+        contents: [{ role: 'user', parts: [{ text: emailContent }] }],
+        config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            responseSchema: getSmartTaskSchema,
+        },
+    });
+    
+    // Fix: Update safeParseJson generic to match new return type
+    return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; contact?: string }>(response.text);
+};
+
 export const geminiService = {
   getSmartTask,
   analyzeTasks,
@@ -249,4 +475,5 @@ export const geminiService = {
   getSmartUpdate,
   getFocusTask,
   transcribeAudio,
+  createTaskFromEmail,
 };
