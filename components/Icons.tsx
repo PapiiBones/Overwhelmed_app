@@ -118,14 +118,24 @@ export const GripVerticalIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' })
     </svg>
 );
 
-// Fix: Add missing InboxIcon
 export const InboxIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 1 2.25-2.25h3.86m-16.5 0h16.5m-16.5 0a9 9 0 0 1-9-9h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 1 2.25-2.25h3.86a9 9 0 0 1-9 9Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
     </svg>
 );
 
-// Fix: Add missing DateRangeIcon
+export const TodayIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+    </svg>
+);
+
+export const UpcomingIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L12 14.25l-5.571-3Z" />
+    </svg>
+);
+
 export const DateRangeIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18M9 12.75h.008v.008H9v-.008Zm3.75 0h.008v.008h-.008v-.008Zm3.75 0h.008v.008h-.008v-.008Zm-3.75 3.75h.008v.008h-.008v-.008Zm3.75 0h.008v.008h-.008v-.008Z" />
@@ -141,5 +151,17 @@ export const LockClosedIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) =
 export const EnvelopeIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+    </svg>
+);
+
+export const UsersIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.125-2.305l-2.625-2.625a3.375 3.375 0 0 0-3.17-2.31c-.51-.034-1.024-.06-1.535-.06A18.04 18.04 0 0 0 3 15.795a18.026 18.026 0 0 0 1.575 6.131 3.375 3.375 0 0 0 2.31-3.17l.006-.06a3.375 3.375 0 0 0-2.31-3.17m11.25 4.5-3-3m0 0-3 3m3-3v11.25m6-16.5-3-3m0 0-3 3m3-3V7.5" />
+    </svg>
+);
+
+export const FolderIcon: React.FC<IconProps> = ({ className = 'w-6 h-6' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6.226c0-1.232.996-2.226 2.226-2.226h3.027c.539 0 1.036.21 1.414.586l.658.658c.378.378.875.586 1.414.586h4.664c1.23 0 2.226.994 2.226 2.226v3.55M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026" />
     </svg>
 );

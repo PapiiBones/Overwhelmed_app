@@ -100,9 +100,14 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, allTasks, projects, tags, con
 
   return (
     <div 
+      draggable={!task.completed && !isBlocked}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("taskId", task.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       onClick={() => onSelectTask(task)}
       className={`
-        relative flex items-start gap-3 p-3 rounded-lg border-l-4 transition-all duration-200 group cursor-pointer
+        relative flex items-start gap-3 p-3 rounded-lg border-l-4 transition-all duration-200 group ${!task.completed && !isBlocked ? 'cursor-grab' : 'cursor-pointer'}
         ${task.completed 
           ? `bg-[var(--color-surface-secondary)] border-[var(--color-border-secondary)] opacity-60` 
           : `${styles.bg} ${styles.border} hover:brightness-125`
@@ -151,6 +156,9 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, allTasks, projects, tags, con
                             <ListIcon className="w-4 h-4" />
                         </span>
                     )}
+                     <span className="text-xs text-[var(--color-text-tertiary)] italic" title={`Created on ${new Date(task.timestamp).toLocaleString()}`}>
+                        {new Date(task.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    </span>
                 </div>
 
                 {task.subtasks && task.subtasks.length > 0 && !task.completed && (

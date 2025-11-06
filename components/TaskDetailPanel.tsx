@@ -579,6 +579,11 @@ const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, allTasks, proje
                     </label>
                 </div>
             </div>
+            <div className="pt-4 text-center">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                Task created on {new Date(task.timestamp).toLocaleString()}
+              </p>
+            </div>
           </div>
         </main>
         <footer className="flex justify-between items-center gap-2 p-4 border-t border-[var(--color-border-secondary)] flex-shrink-0 bg-[var(--color-surface-secondary)]/50">

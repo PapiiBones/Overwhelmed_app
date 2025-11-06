@@ -23,6 +23,7 @@ export interface Tag {
 export interface Contact {
   id: string;
   name: string;
+  color: string;
 }
 
 export interface RecurrenceRule {
@@ -115,7 +116,8 @@ export interface AppSettings {
 
 export interface SidebarItem {
     id: string;
-    type: 'inbox' | 'today' | 'upcoming' | 'calendar' | 'project' | 'tag';
+    // Fix: Add 'calendar' and 'projects' to the union type to match usage.
+    type: 'inbox' | 'today' | 'upcoming' | 'project' | 'tag' | 'contacts' | 'calendar' | 'projects';
     label: string;
     icon?: React.ReactNode;
     color?: string; // For projects and tags
@@ -142,4 +144,6 @@ export type ModalState =
   | { type: 'chatbot' }
   | { type: 'login' }
   | { type: 'settings' }
+  | { type: 'contact-detail'; contact?: Contact }
+  | { type: 'project-detail'; project?: Project }
   | { type: 'email-processor' };

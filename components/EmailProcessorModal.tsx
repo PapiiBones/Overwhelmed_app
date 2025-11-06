@@ -5,14 +5,12 @@ import { geminiService } from '../services/geminiService';
 
 interface EmailProcessorModalProps {
   onClose: () => void;
-  // Fix: Update onAddTask prop to accept a contact string.
   onAddTask: (taskData: Partial<Omit<Task, 'id'|'timestamp' | 'contactId'>> & { _rawTagNames?: string[], contact?: string }) => void;
 }
 
 const EmailProcessorModal: React.FC<EmailProcessorModalProps> = ({ onClose, onAddTask }) => {
   const [emailContent, setEmailContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // Fix: Update state type to allow for a contact string property.
   const [processedTask, setProcessedTask] = useState<Partial<Omit<Task, 'id'|'timestamp' | 'contactId'>> & { _rawTagNames?: string[], contact?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 

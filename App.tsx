@@ -4,6 +4,10 @@ import AddTaskForm from './components/AddTaskForm';
 import TaskItem from './components/TaskItem';
 import Chatbot from './components/Chatbot';
 import CalendarView from './components/CalendarView';
+import ContactsView from './components/ContactsView';
+import ContactDetailModal from './components/ContactDetailModal';
+import ProjectsView from './components/ProjectsView';
+import ProjectDetailModal from './components/ProjectDetailModal';
 import Toast from './components/Toast';
 import Sidebar from './components/Sidebar';
 import TaskDetailPanel from './components/TaskDetailPanel';
@@ -174,8 +178,9 @@ const App: React.FC = () => {
   
   useEffect(() => {
     const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
-    if(currentViewItem?.type === 'calendar') {
+    if(currentViewItem?.type === 'contacts' || currentViewItem?.type === 'projects') {
         setSearchTerm('');
+        setSelectedTask(null);
     }
   }, [currentViewId, sidebarItems]);
   
@@ -208,7 +213,11 @@ const App: React.FC = () => {
     if (existing) {
         return existing.id;
     } else {
-        const newContact: Contact = { id: crypto.randomUUID(), name: normalizedName };
+        const newContact: Contact = { 
+            id: crypto.randomUUID(), 
+            name: normalizedName,
+            color: PROJECT_COLORS[contacts.length % PROJECT_COLORS.length]
+        };
         dispatch({ type: 'UPSERT_CONTACT', payload: newContact });
         return newContact.id;
     }
@@ -227,7 +236,6 @@ const App: React.FC = () => {
     if (isSmartAdd && settings.aiEnabled) {
       dispatch({ type: 'ADD_TASK', payload: { ...newTaskBase, isProcessing: true } as Task });
       try {
-        // Fix: Correctly destructure 'contact' as 'contactName' from the service response.
         const { subtasks: aiSubtasks, tags: aiTags, contact: contactName, ...smartTaskData } = await geminiService.getSmartTask(rawContent);
         
         if (!smartTaskData.content?.trim()) {
@@ -308,6 +316,44 @@ const App: React.FC = () => {
         completeSoundRef.current.play().catch(e => console.error("Audio play failed", e));
     }
   }, [tasks, updateTask]);
+
+  const handleSaveContact = (contactData: Omit<Contact, 'id'> & { id?: string }) => {
+    if (contactData.id) {
+        dispatch({ type: 'UPDATE_CONTACT', payload: contactData as Contact });
+    } else {
+        dispatch({ type: 'ADD_CONTACT', payload: { ...contactData, id: crypto.randomUUID() } });
+    }
+    setModal({ type: 'none' });
+  };
+
+  const handleDeleteContact = (contactId: string) => {
+    dispatch({ type: 'DELETE_CONTACT', payload: contactId });
+    setModal({ type: 'none' });
+  };
+
+  const handleSaveProject = (projectData: Omit<Project, 'id'> & { id?: string }) => {
+    if (projectData.id) {
+        dispatch({ type: 'UPDATE_PROJECT', payload: projectData as Project });
+    } else {
+        const newProject: Project = {
+            id: crypto.randomUUID(),
+            name: projectData.name,
+            color: projectData.color
+        };
+        dispatch({ type: 'ADD_PROJECT', payload: newProject });
+    }
+    setModal({ type: 'none' });
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    if (window.confirm("Are you sure you want to delete this project? All tasks within it will be moved to the Inbox.")) {
+        dispatch({ type: 'DELETE_PROJECT', payload: projectId });
+        setModal({ type: 'none' });
+        if (currentViewId === projectId) {
+            setCurrentViewId('inbox');
+        }
+    }
+  };
   
   // --- AI Actions ---
   const handleSendMessage = async (newMessage: string) => {
@@ -360,11 +406,11 @@ const App: React.FC = () => {
         }
     }
     
-    if (currentViewItem?.type !== 'calendar' && filterBy !== 'all') {
+    if (currentViewItem?.type !== 'contacts' && currentViewItem?.type !== 'projects' && filterBy !== 'all') {
         filtered = filtered.filter(task => task.importance === filterBy);
     }
     
-    if (currentViewItem?.type !== 'calendar' && searchTerm) {
+    if (currentViewItem?.type !== 'contacts' && currentViewItem?.type !== 'projects' && searchTerm) {
         const lowercasedTerm = searchTerm.toLowerCase();
         filtered = filtered.filter(task => {
             const project = projects.find(p => p.id === task.projectId);
@@ -388,6 +434,104 @@ const App: React.FC = () => {
   
   const currentViewItem = sidebarItems.find(item => item.id === currentViewId);
 
+  const renderCurrentView = () => {
+    if (!currentViewItem) return null; // Or some fallback UI
+
+    switch(currentViewItem.type) {
+      case 'projects':
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <ProjectsView
+              projects={projects}
+              tasks={tasks}
+              onAddProject={() => setModal({ type: 'project-detail' })}
+              onSelectProject={(project) => setCurrentViewId(project.id)}
+              onEditProject={(project) => setModal({ type: 'project-detail', project })}
+              onDeleteProject={handleDeleteProject}
+            />
+          </div>
+        );
+      case 'contacts':
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <ContactsView 
+                contacts={contacts} 
+                tasks={tasks}
+                onAddContact={() => setModal({ type: 'contact-detail' })}
+                onSelectContact={(contact) => setModal({ type: 'contact-detail', contact })}
+                onDeleteContact={handleDeleteContact}
+            />
+          </div>
+        );
+      default: // All task list views
+        return (
+          <div className="flex-1 flex h-full">
+            {/* Left Panel: Task List */}
+            <div className="w-1/2 flex flex-col overflow-y-auto">
+              <div className="p-4 md:p-8">
+                <Header
+                    viewLabel={currentViewItem?.label || 'Overwhelmed'}
+                    activeTasksCount={activeTasksCount}
+                    settings={settings}
+                    isAnalyzing={isAnalyzing}
+                    onAnalyze={handleAnalyze}
+                    onFindFocus={findFocusTask}
+                    searchTerm={searchTerm}
+                    onSearchTermChange={setSearchTerm}
+                    filterBy={filterBy}
+                    onFilterByChange={setFilterBy}
+                    sortBy={sortBy}
+                    onSortByChange={setSortBy}
+                    onOpenEmailProcessor={() => setModal({ type: 'email-processor' })}
+                />
+                <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                  <div className="mb-6">
+                    <AddTaskForm 
+                      onAddTask={addTask} 
+                      isBusy={isAddingTask} 
+                      settings={settings} 
+                      dispatch={dispatch}
+                      projects={projects}
+                      currentViewId={currentViewId}
+                      sidebarItems={sidebarItems}
+                    />
+                  </div>
+                  <div className="space-y-4">
+                    {displayedTasks.length > 0 ? (
+                        displayedTasks.map(task => (
+                        <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
+                            <TaskItem task={task} allTasks={tasks} projects={projects} tags={tags} contacts={contacts} onSelectTask={(task) => setSelectedTask(task)} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
+                        </div>
+                        ))
+                    ) : (
+                        (tasks.length === 0 && !searchTerm) ? (
+                        <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
+                            <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">Welcome! Get started by adding a task.</h2>
+                            <p className="text-[var(--color-text-tertiary)] mt-2">Try typing 'Call Zoe tomorrow at 5 #work' to see the AI in action.</p>
+                        </div>
+                        ) : (
+                        <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
+                            <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">{searchTerm ? 'No Matching Tasks' : 'All Clear!'}</h2>
+                            <p className="text-[var(--color-text-tertiary)] mt-2">{searchTerm ? 'Try a different search term.' : 'There are no tasks in this view. Add one above to get started!'}</p>
+                        </div>
+                        )
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Panel: Calendar */}
+            <div className="w-1/2 border-l border-[var(--color-border-secondary)] hidden lg:flex flex-col h-full">
+              <div className="p-4 md:p-6 h-full overflow-y-auto">
+                  <CalendarView tasks={tasks} projects={projects} tags={tags} contacts={contacts} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setSelectedTask(task)} onUpdateTask={updateTask} />
+              </div>
+            </div>
+          </div>
+        );
+    }
+  };
+
   return (
     <div className={`h-screen flex font-sans transition-all duration-500 ${focusTaskId ? 'pt-16' : 'pt-0'}`}>
       {focusTaskId && (
@@ -405,67 +549,9 @@ const App: React.FC = () => {
         onLoginClick={() => setModal({ type: 'login' })} onLogoutClick={handleLogout}
         onSettingsClick={() => setModal({ type: 'settings' })}
       />
-      <main className="flex-1 flex flex-col overflow-y-auto relative">
-        <div className={`flex-grow transition-all duration-300 ${selectedTask ? 'mr-[450px]' : 'mr-0'}`}>
-            <div className="p-4 md:p-8 h-full flex flex-col">
-                <Header
-                    viewLabel={currentViewItem?.label || 'Overwhelmed'}
-                    activeTasksCount={activeTasksCount}
-                    settings={settings}
-                    isAnalyzing={isAnalyzing}
-                    onAnalyze={handleAnalyze}
-                    onFindFocus={findFocusTask}
-                    searchTerm={searchTerm}
-                    onSearchTermChange={setSearchTerm}
-                    filterBy={filterBy}
-                    onFilterByChange={setFilterBy}
-                    sortBy={sortBy}
-                    onSortByChange={setSortBy}
-                    isCalendarView={currentViewItem?.type === 'calendar'}
-                    onOpenEmailProcessor={() => setModal({ type: 'email-processor' })}
-                />
-                
-                <div className={`transition-opacity duration-300 ${focusTaskId ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                    {currentViewItem?.type !== 'calendar' && 
-                      <div className="mb-6">
-                        <AddTaskForm 
-                          onAddTask={addTask} 
-                          isBusy={isAddingTask} 
-                          settings={settings} 
-                          dispatch={dispatch}
-                          projects={projects}
-                          currentViewId={currentViewId}
-                          sidebarItems={sidebarItems}
-                        />
-                      </div>
-                    }
-                    {currentViewItem?.type === 'calendar' ? (
-                        <CalendarView tasks={tasks} projects={projects} tags={tags} contacts={contacts} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onSelectTask={(task) => setSelectedTask(task)} onUpdateTask={updateTask} />
-                    ) : (
-                      <div className="space-y-4">
-                        {displayedTasks.length > 0 ? (
-                            displayedTasks.map(task => (
-                            <div key={task.id} className={`transition-all duration-300 ${focusTaskId && focusTaskId !== task.id ? 'opacity-30 blur-sm' : ''}`}>
-                                <TaskItem task={task} allTasks={tasks} projects={projects} tags={tags} contacts={contacts} onSelectTask={(task) => setSelectedTask(task)} onDeleteTask={deleteTask} onComplete={handleCompleteTask} onUpdateTask={updateTask} isFocused={focusTaskId === task.id} />
-                            </div>
-                            ))
-                        ) : (
-                            (tasks.length === 0) ? (
-                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
-                                <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">Welcome! Get started by adding a task.</h2>
-                                <p className="text-[var(--color-text-tertiary)] mt-2">Try typing 'Call Zoe tomorrow at 5 #work' to see the AI in action.</p>
-                            </div>
-                            ) : (
-                            <div className="text-center py-16 px-4 bg-[var(--color-surface-primary)] rounded-lg border border-dashed border-[var(--color-border-secondary)]">
-                                <h2 className="text-2xl font-semibold text-[var(--color-text-secondary)]">{searchTerm ? 'No Matching Tasks' : 'All Clear!'}</h2>
-                                <p className="text-[var(--color-text-tertiary)] mt-2">{searchTerm ? 'Try a different search term.' : 'There are no tasks in this view. Add one above to get started!'}</p>
-                            </div>
-                            )
-                        )}
-                        </div>
-                    )}
-                </div>
-            </div>
+      <main className="flex-1 flex overflow-hidden">
+        <div className={`flex-1 flex transition-all duration-300 ${selectedTask ? 'mr-[450px]' : 'mr-0'}`}>
+          {renderCurrentView()}
         </div>
         
         {selectedTask && (
@@ -488,7 +574,6 @@ const App: React.FC = () => {
               dispatch={dispatch} 
             />
         )}
-
       </main>
       {settings.aiEnabled && 
           <Chatbot isOpen={modal.type === 'chatbot'} onToggle={() => setModal(prev => prev.type === 'chatbot' ? { type: 'none' } : { type: 'chatbot' })} 
@@ -509,6 +594,26 @@ const App: React.FC = () => {
           onImport={handleImportData}
           onDeleteAllData={handleDeleteAllData}
           onClose={() => setModal({ type: 'none' })}
+        />
+      )}
+       {modal.type === 'contact-detail' && (
+        <ContactDetailModal
+            contact={modal.contact}
+            tasks={tasks}
+            onClose={() => setModal({ type: 'none' })}
+            onSave={handleSaveContact}
+            onSelectTask={(task) => {
+                setModal({ type: 'none' });
+                // Timeout to allow the contact modal to close before opening the task panel
+                setTimeout(() => setSelectedTask(task), 100);
+            }}
+        />
+      )}
+      {modal.type === 'project-detail' && (
+        <ProjectDetailModal
+            project={modal.project}
+            onClose={() => setModal({ type: 'none' })}
+            onSave={handleSaveProject}
         />
       )}
       {modal.type === 'email-processor' && (

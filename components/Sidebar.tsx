@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, SidebarItem, AppState } from '../types';
-import { InboxIcon, DateRangeIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon, PencilIcon, CheckIcon } from './Icons';
+import { InboxIcon, TodayIcon, UpcomingIcon, CalendarIcon, TrashIcon, PlusIcon, SettingsIcon, PencilIcon, CheckIcon, UsersIcon, FolderIcon } from './Icons';
 
 interface SidebarProps {
   sidebarItems: SidebarItem[];
@@ -56,8 +56,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   const getIconForType = (type: SidebarItem['type']) => {
     switch(type) {
       case 'inbox': return <InboxIcon className="w-5 h-5 text-sky-400" />;
-      case 'today': return <DateRangeIcon className="w-5 h-5 text-green-400" />;
-      case 'upcoming': return <DateRangeIcon className="w-5 h-5 text-yellow-400" />;
+      case 'today': return <TodayIcon className="w-5 h-5 text-amber-400" />;
+      case 'upcoming': return <UpcomingIcon className="w-5 h-5 text-green-400" />;
+      case 'projects': return <FolderIcon className="w-5 h-5 text-fuchsia-400" />;
+      case 'contacts': return <UsersIcon className="w-5 h-5 text-rose-400" />;
       case 'calendar': return <CalendarIcon className="w-5 h-5 text-purple-400" />;
       default: return null;
     }
@@ -80,13 +82,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-grow space-y-1.5 overflow-y-auto pr-1 -mr-2">
         {sidebarItems.map(item => (
             <div key={item.id}
-                draggable
+                draggable={item.isDeletable}
                 onDragStart={(e) => handleDragStart(e, item)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, item)}
-                className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg cursor-grab transition-colors ${
+                className={`group flex items-center justify-between w-full text-left px-3 py-2.5 rounded-lg transition-colors ${
                     currentViewId === item.id ? 'bg-[var(--color-nav-item-active-bg)] text-[var(--color-nav-item-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-nav-item-hover-bg)] hover:text-[var(--color-text-primary)]'
-                }`}
+                } ${item.isDeletable ? 'cursor-grab' : 'cursor-pointer'}`}
                 onClick={() => onSelectView(item.id)}
             >
                 <div className="flex items-center gap-3">

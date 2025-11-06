@@ -15,13 +15,12 @@ interface HeaderProps {
     onFilterByChange: (filter: Importance | 'all') => void;
     sortBy: SortBy;
     onSortByChange: (sort: SortBy) => void;
-    isCalendarView: boolean;
     onOpenEmailProcessor: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
     viewLabel, activeTasksCount, settings, isAnalyzing, onAnalyze, onFindFocus,
-    searchTerm, onSearchTermChange, filterBy, onFilterByChange, sortBy, onSortByChange, isCalendarView,
+    searchTerm, onSearchTermChange, filterBy, onFilterByChange, sortBy, onSortByChange,
     onOpenEmailProcessor
 }) => {
     const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
@@ -59,51 +58,49 @@ const Header: React.FC<HeaderProps> = ({
                         <BrainIcon className="w-5 h-5"/> <span>Analyze</span>
                     </button>
                 )}
-                 {!isCalendarView && (
-                    <div className="relative" ref={viewOptionsRef}>
-                        <button onClick={() => setIsViewOptionsOpen(prev => !prev)} className="p-2.5 rounded-full bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] transition-colors">
-                            <SettingsIcon className="w-5 h-5" />
-                        </button>
-                        {isViewOptionsOpen && (
-                            <div className="absolute top-full right-0 mt-2 w-72 bg-[var(--color-surface-primary)] border border-[var(--color-border-secondary)] rounded-lg shadow-2xl z-20 p-4 animate-fade-in">
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Search</label>
-                                         <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => onSearchTermChange(e.target.value)}
-                                            className="w-full bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)] transition-all" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Filter by Importance</label>
-                                        <div className="flex items-center gap-1 bg-[var(--color-surface-secondary)] p-1 rounded-full border border-[var(--color-border-primary)]">
-                                            {(['all', ...Object.values(Importance)] as const).map(level => (
-                                                <button key={level} onClick={() => onFilterByChange(level)} className={`flex-1 capitalize text-center px-2 py-1 text-xs font-semibold rounded-full transition-colors ${filterBy === level ? "bg-[var(--color-surface-tertiary)] text-[var(--color-text-accent)]" : `hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-secondary)]`}`}>
-                                                    {level === 'all' ? 'All' : level}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Sort By</label>
-                                        <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)} className="w-full bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 px-4 pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm appearance-none text-[var(--color-text-secondary)]">
-                                            <optgroup label="Creation Date">
-                                                <option value="timestamp_desc">Newest First</option>
-                                                <option value="timestamp_asc">Oldest First</option>
-                                            </optgroup>
-                                            <optgroup label="Due Date">
-                                                <option value="dueDate_asc">Soonest First</option>
-                                                <option value="dueDate_desc">Latest First</option>
-                                            </optgroup>
-                                            <optgroup label="Importance">
-                                                <option value="importance_desc">Highest First</option>
-                                                <option value="importance_asc">Lowest First</option>
-                                            </optgroup>
-                                        </select>
+                <div className="relative" ref={viewOptionsRef}>
+                    <button onClick={() => setIsViewOptionsOpen(prev => !prev)} className="p-2.5 rounded-full bg-[var(--color-surface-tertiary)] hover:bg-[var(--color-border-tertiary)] transition-colors">
+                        <SettingsIcon className="w-5 h-5" />
+                    </button>
+                    {isViewOptionsOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-72 bg-[var(--color-surface-primary)] border border-[var(--color-border-secondary)] rounded-lg shadow-2xl z-20 p-4 animate-fade-in">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Search</label>
+                                     <input type="text" placeholder="Search tasks..." value={searchTerm} onChange={(e) => onSearchTermChange(e.target.value)}
+                                        className="w-full bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-[var(--color-text-tertiary)] transition-all" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Filter by Importance</label>
+                                    <div className="flex items-center gap-1 bg-[var(--color-surface-secondary)] p-1 rounded-full border border-[var(--color-border-primary)]">
+                                        {(['all', ...Object.values(Importance)] as const).map(level => (
+                                            <button key={level} onClick={() => onFilterByChange(level)} className={`flex-1 capitalize text-center px-2 py-1 text-xs font-semibold rounded-full transition-colors ${filterBy === level ? "bg-[var(--color-surface-tertiary)] text-[var(--color-text-accent)]" : `hover:bg-[var(--color-nav-item-hover-bg)] text-[var(--color-text-secondary)]`}`}>
+                                                {level === 'all' ? 'All' : level}
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Sort By</label>
+                                    <select value={sortBy} onChange={(e) => onSortByChange(e.target.value as SortBy)} className="w-full bg-[var(--color-surface-secondary)] border border-[var(--color-border-primary)] rounded-full py-2 px-4 pr-8 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm appearance-none text-[var(--color-text-secondary)]">
+                                        <optgroup label="Creation Date">
+                                            <option value="timestamp_desc">Newest First</option>
+                                            <option value="timestamp_asc">Oldest First</option>
+                                        </optgroup>
+                                        <optgroup label="Due Date">
+                                            <option value="dueDate_asc">Soonest First</option>
+                                            <option value="dueDate_desc">Latest First</option>
+                                        </optgroup>
+                                        <optgroup label="Importance">
+                                            <option value="importance_desc">Highest First</option>
+                                            <option value="importance_asc">Lowest First</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
                             </div>
-                        )}
-                    </div>
-                 )}
+                        </div>
+                    )}
+                </div>
             </div>
         </header>
     );

@@ -1,4 +1,5 @@
 
+
 import { useReducer } from 'react';
 import { Task, Project, ChatMessage, ToastState, AppSettings, Tag, SidebarItem, AppState, Contact } from '../types';
 import { InboxIcon, DateRangeIcon, CalendarIcon } from '../components/Icons';
@@ -12,11 +13,15 @@ type Action =
   | { type: 'UPDATE_TASK'; payload: { id: string; updatedFields: Partial<Omit<Task, 'id' | 'timestamp'>> } }
   | { type: 'DELETE_TASK'; payload: string }
   | { type: 'ADD_PROJECT'; payload: Project }
+  | { type: 'UPDATE_PROJECT'; payload: Project }
   | { type: 'DELETE_PROJECT'; payload: string }
   | { type: 'ADD_TAG'; payload: Tag }
   | { type: 'UPDATE_TAG'; payload: Tag }
   | { type: 'DELETE_TAG'; payload: string }
   | { type: 'UPSERT_CONTACT'; payload: Contact }
+  | { type: 'ADD_CONTACT'; payload: Contact }
+  | { type: 'UPDATE_CONTACT'; payload: Contact }
+  | { type: 'DELETE_CONTACT'; payload: string }
   | { type: 'SET_CHAT_HISTORY'; payload: ChatMessage[] }
   | { type: 'SET_TOAST_STATE'; payload: ToastState | null }
   | { type: 'RESTORE_UNDO_STATE' }
@@ -25,10 +30,11 @@ type Action =
   | { type: 'UPDATE_SIDEBAR_ITEM', payload: SidebarItem };
 
 const initialSidebarItems: SidebarItem[] = [
-    { id: 'inbox', type: 'inbox', label: 'Inbox', isEditable: true, isDeletable: false },
-    { id: 'today', type: 'today', label: 'Today', isEditable: true, isDeletable: false },
-    { id: 'upcoming', type: 'upcoming', label: 'Upcoming', isEditable: true, isDeletable: false },
-    { id: 'calendar', type: 'calendar', label: 'Calendar', isEditable: true, isDeletable: false },
+    { id: 'inbox', type: 'inbox', label: 'Inbox', isEditable: false, isDeletable: false },
+    { id: 'today', type: 'today', label: 'Today', isEditable: false, isDeletable: false },
+    { id: 'upcoming', type: 'upcoming', label: 'Upcoming', isEditable: false, isDeletable: false },
+    { id: 'projects', type: 'projects', label: 'Projects', isEditable: false, isDeletable: false },
+    { id: 'contacts', type: 'contacts', label: 'Contacts', isEditable: false, isDeletable: false },
 ];
 
 const initialState: AppState = {
@@ -62,7 +68,11 @@ const appReducer = (state: AppState, action: Action): AppState => {
           let contactId = contactNameMap.get(lowerCaseName);
 
           if (!contactId) {
-            const newContact: Contact = { id: crypto.randomUUID(), name: contactName };
+            const newContact: Contact = { 
+                id: crypto.randomUUID(), 
+                name: contactName,
+                color: PROJECT_COLORS[contacts.length % PROJECT_COLORS.length]
+            };
             contacts.push(newContact);
             contactNameMap.set(lowerCaseName, newContact.id);
             contactId = newContact.id;
@@ -83,7 +93,7 @@ const appReducer = (state: AppState, action: Action): AppState => {
       };
 
       // Migration logic for customizable sidebar
-      if (!loadedState.sidebarItems || loadedState.sidebarItems.length < 4) {
+      if (!loadedState.sidebarItems || loadedState.sidebarItems.length < 5) {
         const migratedSidebarItems = [...initialSidebarItems];
         loadedState.projects.forEach(p => {
             if (!migratedSidebarItems.some(si => si.id === p.id)) {
@@ -132,6 +142,14 @@ const appReducer = (state: AppState, action: Action): AppState => {
             sidebarItems: [...state.sidebarItems, newSidebarItem] 
         };
     }
+    case 'UPDATE_PROJECT': {
+        const updatedProject = action.payload;
+        return {
+            ...state,
+            projects: state.projects.map(p => p.id === updatedProject.id ? updatedProject : p),
+            sidebarItems: state.sidebarItems.map(item => item.id === updatedProject.id ? { ...item, label: updatedProject.name, color: updatedProject.color } : item),
+        };
+    }
     case 'DELETE_PROJECT': {
         const projectId = action.payload;
         return {
@@ -177,10 +195,20 @@ const appReducer = (state: AppState, action: Action): AppState => {
             sidebarItems: state.sidebarItems.filter(item => item.id !== tagId)
         };
     }
+    case 'ADD_CONTACT':
+      return { ...state, contacts: [...state.contacts, action.payload] };
+    case 'UPDATE_CONTACT':
+      return { ...state, contacts: state.contacts.map(c => c.id === action.payload.id ? action.payload : c) };
+    case 'DELETE_CONTACT':
+      return {
+        ...state,
+        contacts: state.contacts.filter(c => c.id !== action.payload),
+        tasks: state.tasks.map(t => t.contactId === action.payload ? { ...t, contactId: undefined } : t),
+      };
      case 'UPSERT_CONTACT': {
-      const existingContact = state.contacts.find(c => c.name.toLowerCase() === action.payload.name.toLowerCase());
+      const existingContact = state.contacts.find(c => c.id === action.payload.id || c.name.toLowerCase() === action.payload.name.toLowerCase());
       if (existingContact) {
-        return state; // Do nothing if contact already exists
+         return { ...state, contacts: state.contacts.map(c => c.id === existingContact.id ? action.payload : c) };
       }
       return { ...state, contacts: [...state.contacts, action.payload] };
     }

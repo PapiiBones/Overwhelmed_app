@@ -407,7 +407,6 @@ const transcribeAudio = async (audioBase64: string): Promise<string> => {
     return response.text.trim();
   };
 
-// Fix: Update return type to include optional 'contact' string
 const createTaskFromEmail = async (emailContent: string): Promise<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; contact?: string }> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const timezoneOffset = new Date().getTimezoneOffset();
@@ -464,7 +463,6 @@ Jane"
         },
     });
     
-    // Fix: Update safeParseJson generic to match new return type
     return safeParseJson<Omit<Partial<Task>, 'subtasks' | 'tagIds' | 'contactId'> & { subtasks?: string[]; tags?: string[]; contact?: string }>(response.text);
 };
 
